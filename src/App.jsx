@@ -443,16 +443,341 @@ const Stars = ({ n, max = 10 }) => {
   const filled = Math.round(n / 2);
   return <span style={{ display: "inline-flex", gap: 2 }}>{[...Array(5)].map((_, i) => <span key={i} style={{ color: i < filled ? C.yellow : C.g200 }}>{i < filled ? Ic.star : Ic.starEmpty}</span>)}</span>;
 };
-// WarrantyAnalyzer - simplified for initial deploy
+// WarrantyAnalyzer – full 3-path wizard
 function WarrantyAnalyzer({ open, onClose }) {
+  const [path, setPath] = useState(null);
+  const [step, setStep] = useState(0);
+  const [propName, setPropName] = useState("");
+  const [propAddr, setPropAddr] = useState("");
+  const [propType, setPropType] = useState("Commercial");
+  const [roofType, setRoofType] = useState("");
+  const [roofAge, setRoofAge] = useState("");
+  const [roofSqft, setRoofSqft] = useState("");
+  const [roofMembrane, setRoofMembrane] = useState("");
+  const [setupDone, setSetupDone] = useState(false);
+  const [compIds, setCompIds] = useState([]);
+  const [compFilter, setCompFilter] = useState("");
+  const [recMembrane, setRecMembrane] = useState("");
+  const [recBudget, setRecBudget] = useState("mid");
+  const [recTerm, setRecTerm] = useState(15);
+  const [recResults, setRecResults] = useState(null);
+
   if (!open) return null;
-  return <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(30,44,85,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-    <div style={{ background: C.white, borderRadius: 20, padding: 40, maxWidth: 500, textAlign: "center" }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, marginBottom: 12 }}>Warranty Analyzer</div>
-      <div style={{ fontSize: 14, color: C.g600, fontFamily: F.body, marginBottom: 24 }}>Compare, recommend, and onboard warranty options.</div>
-      <Btn primary onClick={onClose}>Close</Btn>
+
+  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); };
+
+  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 };
+  const modal = { background: C.white, borderRadius: 20, padding: 32, maxWidth: 820, width: "95vw", maxHeight: "90vh", overflowY: "auto", position: "relative" };
+  const closeModal = () => { reset(); onClose(); };
+
+  // ---- PATH SELECTION ----
+  if (!path) return (
+    <div style={overlay} onClick={closeModal}>
+      <div style={modal} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Warranty Analyzer</h2>
+          <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+        </div>
+        <p style={{ fontSize: 14, color: C.g600, fontFamily: F.body, marginBottom: 28 }}>Select a workflow to begin analyzing warranty options for your properties.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+          {[
+            { id: "setup", icon: Ic.accounts, title: "New Property Setup", desc: "Register a new property and configure roof sections for warranty tracking." },
+            { id: "compare", icon: Ic.warranties, title: "Warranty Comparison", desc: "Compare up to 4 warranties side by side across key coverage dimensions." },
+            { id: "recommend", icon: Ic.inspections, title: "Warranty Recommendation", desc: "Get AI-matched warranty suggestions based on roof profile and budget." }
+          ].map(p => (
+            <button key={p.id} onClick={() => setPath(p.id)} style={{ background: C.white, border: "2px solid " + C.g200, borderRadius: 14, padding: 20, textAlign: "left", cursor: "pointer", transition: "all .2s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.background = C.g50; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.g200; e.currentTarget.style.background = C.white; }}>
+              <div style={{ fontSize: 28, marginBottom: 10 }}>{p.icon}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 6 }}>{p.title}</div>
+              <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, lineHeight: 1.5 }}>{p.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
-  </div>;
+  );
+
+  // ---- NEW PROPERTY SETUP ----
+  if (path === "setup") {
+    const setupSteps = ["Property Info", "Roof Details", "Confirm & Save"];
+    const canNext = step === 0 ? propName && propAddr : step === 1 ? roofType && roofSqft && roofMembrane : true;
+
+    if (setupDone) return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={modal} onClick={e => e.stopPropagation()}>
+          <div style={{ textAlign: "center", padding: 20 }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, fontFamily: F.head, marginBottom: 12 }}>Property Registered!</h2>
+            <p style={{ fontSize: 14, color: C.g600, fontFamily: F.body, marginBottom: 8 }}><strong>{propName}</strong> at {propAddr}</p>
+            <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 24 }}>{roofType} roof · {Number(roofSqft).toLocaleString()} sq ft · {roofMembrane} membrane</p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <Btn onClick={() => { reset(); setPath("recommend"); }}>Get Warranty Recommendation</Btn>
+              <Btn secondary onClick={closeModal}>Done</Btn>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+    return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={modal} onClick={e => e.stopPropagation()}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>{Ic.accounts} New Property Setup</h2>
+            <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+            {setupSteps.map((s, i) => (
+              <div key={i} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ height: 4, borderRadius: 2, background: i <= step ? C.green : C.g200, marginBottom: 6 }} />
+                <span style={{ fontSize: 11, color: i <= step ? C.navy : C.g400, fontFamily: F.body, fontWeight: i === step ? 700 : 400 }}>{s}</span>
+              </div>
+            ))}
+          </div>
+          {step === 0 && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <FormField label="Property Name" value={propName} onChange={setPropName} placeholder="e.g. Riverside Medical Center" />
+              <FormField label="Street Address" value={propAddr} onChange={setPropAddr} placeholder="e.g. 123 Main St, Nashville TN" />
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.body, marginBottom: 4 }}>Property Type</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["Commercial", "Industrial", "Institutional", "Multi-Family"].map(t => (
+                    <button key={t} onClick={() => setPropType(t)} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + (propType === t ? C.green : C.g200), background: propType === t ? C.g50 : C.white, color: propType === t ? C.navy : C.g600, fontFamily: F.body, fontSize: 12, fontWeight: propType === t ? 700 : 400, cursor: "pointer" }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {step === 1 && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.body, marginBottom: 4 }}>Roof System Type</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {["Flat/Low-Slope", "Metal Standing Seam", "Built-Up (BUR)", "Modified Bitumen", "Green Roof", "Steep Slope"].map(t => (
+                    <button key={t} onClick={() => setRoofType(t)} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + (roofType === t ? C.green : C.g200), background: roofType === t ? C.g50 : C.white, color: roofType === t ? C.navy : C.g600, fontFamily: F.body, fontSize: 12, fontWeight: roofType === t ? 700 : 400, cursor: "pointer" }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <FormField label="Roof Age (years)" value={roofAge} onChange={setRoofAge} placeholder="e.g. 5" />
+                <FormField label="Total Sq Footage" value={roofSqft} onChange={setRoofSqft} placeholder="e.g. 45000" />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.body, marginBottom: 4 }}>Primary Membrane</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {["TPO", "EPDM", "PVC", "Acrylic", "Silicone", "Asphaltic", "Metal"].map(m => (
+                    <button key={m} onClick={() => setRoofMembrane(m)} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + (roofMembrane === m ? C.green : C.g200), background: roofMembrane === m ? C.g50 : C.white, color: roofMembrane === m ? C.navy : C.g600, fontFamily: F.body, fontSize: 12, fontWeight: roofMembrane === m ? 700 : 400, cursor: "pointer" }}>{m}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {step === 2 && (
+            <div style={{ background: C.g50, borderRadius: 12, padding: 20 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 16 }}>Review Property Details</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 13, fontFamily: F.body }}>
+                <Info label="Property Name" value={propName} />
+                <Info label="Address" value={propAddr} />
+                <Info label="Property Type" value={propType} />
+                <Info label="Roof System" value={roofType} />
+                <Info label="Roof Age" value={roofAge ? roofAge + " years" : "Not specified"} />
+                <Info label="Square Footage" value={roofSqft ? Number(roofSqft).toLocaleString() + " sq ft" : "Not specified"} />
+                <Info label="Membrane" value={roofMembrane} />
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
+            <Btn secondary onClick={() => step === 0 ? setPath(null) : setStep(step - 1)}>{step === 0 ? "← Back to Menu" : "← Previous"}</Btn>
+            {step < 2 ? (
+              <Btn primary onClick={() => setStep(step + 1)} style={{ opacity: canNext ? 1 : 0.4, pointerEvents: canNext ? "auto" : "none" }}>Next →</Btn>
+            ) : (
+              <Btn primary onClick={() => setSetupDone(true)}>✅ Register Property</Btn>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- WARRANTY COMPARISON ----
+  if (path === "compare") {
+    const filtered = WARRANTY_DB.filter(w => !compFilter || w.name.toLowerCase().includes(compFilter.toLowerCase()) || (w.manufacturer || "").toLowerCase().includes(compFilter.toLowerCase()));
+    const selected = WARRANTY_DB.filter(w => compIds.includes(w.id));
+    const toggleComp = (id) => setCompIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 4 ? [...prev, id] : prev);
+
+    return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={{...modal, maxWidth: 960}} onClick={e => e.stopPropagation()}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>{Ic.warranties} Warranty Comparison</h2>
+            <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+          </div>
+
+          {step === 0 ? (
+            <div>
+              <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 16 }}>Select up to 4 warranties to compare side by side.</p>
+              <input value={compFilter} onChange={e => setCompFilter(e.target.value)} placeholder="Search warranties..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + C.g200, fontFamily: F.body, fontSize: 13, marginBottom: 16, boxSizing: "border-box" }} />
+              <div style={{ maxHeight: 400, overflowY: "auto", display: "grid", gap: 8 }}>
+                {filtered.map(w => (
+                  <button key={w.id} onClick={() => toggleComp(w.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: 10, border: "1.5px solid " + (compIds.includes(w.id) ? C.green : C.g200), background: compIds.includes(w.id) ? C.g50 : C.white, cursor: "pointer", textAlign: "left" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.name}</div>
+                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.manufacturer} · {w.term}yr · Rating: {w.rating}/10</div>
+                    </div>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, border: "2px solid " + (compIds.includes(w.id) ? C.green : C.g300), background: compIds.includes(w.id) ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 12, fontWeight: 700 }}>{compIds.includes(w.id) ? "✓" : ""}</div>
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+                <Btn secondary onClick={() => setPath(null)}>← Back</Btn>
+                <Btn primary onClick={() => setStep(1)} style={{ opacity: compIds.length >= 2 ? 1 : 0.4, pointerEvents: compIds.length >= 2 ? "auto" : "none" }}>Compare {compIds.length} Warranties →</Btn>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: F.body, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: C.g50 }}>
+                      <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200 }}>Feature</th>
+                      {selected.map(w => <th key={w.id} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200, minWidth: 140 }}>{w.name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: "Manufacturer", fn: w => w.manufacturer },
+                      { label: "Term", fn: w => w.term + " years" },
+                      { label: "Rating", fn: w => w.rating + "/10" },
+                      { label: "Labor Covered", fn: w => w.laborCovered ? "✅" : "❌" },
+                      { label: "Material Covered", fn: w => w.materialCovered ? "✅" : "❌" },
+                      { label: "Consequential", fn: w => w.consequential ? "✅" : "❌" },
+                      { label: "Dollar Cap", fn: w => w.dollarCap || "N/A" },
+                      { label: "Transferable", fn: w => w.transferable ? "✅" : "❌" },
+                      { label: "Ponding Excluded", fn: w => w.pondingExcluded ? "⚠️ Yes" : "✅ No" },
+                      { label: "Wind Limit", fn: w => w.windLimit || "Standard" },
+                      { label: "Inspection Freq", fn: w => w.inspFreq || "N/A" },
+                      { label: "Inspected By", fn: w => w.inspBy || "N/A" },
+                      { label: "Membranes", fn: w => (w.membranes || []).join(", ") },
+                      { label: "Best For", fn: w => w.bestFor || "N/A" },
+                    ].map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.g50 }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 600, color: C.navy, borderBottom: "1px solid " + C.g100 }}>{row.label}</td>
+                        {selected.map(w => <td key={w.id} style={{ padding: "8px 12px", textAlign: "center", color: C.g700, borderBottom: "1px solid " + C.g100 }}>{row.fn(w)}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+                <Btn secondary onClick={() => { setStep(0); setCompIds([]); }}>← Pick Different</Btn>
+                <Btn secondary onClick={closeModal}>Done</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- WARRANTY RECOMMENDATION ----
+  if (path === "recommend") {
+    const membranes = [...new Set(WARRANTY_DB.flatMap(w => w.membranes || []))].sort();
+    const getRecommendations = () => {
+      let matches = WARRANTY_DB.filter(w => !recMembrane || (w.membranes || []).includes(recMembrane));
+      if (recTerm) matches = matches.filter(w => w.term >= Number(recTerm) * 0.7);
+      matches = matches.sort((a, b) => b.rating - a.rating).slice(0, 5);
+      setRecResults(matches);
+      setStep(1);
+    };
+
+    if (step === 0) return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={modal} onClick={e => e.stopPropagation()}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>{Ic.inspections} Warranty Recommendation</h2>
+            <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+          </div>
+          <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 20 }}>Tell us about your roof and we will match the best warranty options from our database of {WARRANTY_DB.length}+ warranties.</p>
+          <div style={{ display: "grid", gap: 16 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.body, marginBottom: 6 }}>Primary Membrane Type</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {membranes.map(m => (
+                  <button key={m} onClick={() => setRecMembrane(recMembrane === m ? "" : m)} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + (recMembrane === m ? C.green : C.g200), background: recMembrane === m ? C.g50 : C.white, color: recMembrane === m ? C.navy : C.g600, fontFamily: F.body, fontSize: 12, fontWeight: recMembrane === m ? 700 : 400, cursor: "pointer" }}>{m}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.body, marginBottom: 6 }}>Budget Range</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[["low", "💰 Economy"], ["mid", "⭐ Mid-Range"], ["high", "💎 Premium"]].map(([v, lbl]) => (
+                  <button key={v} onClick={() => setRecBudget(v)} style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + (recBudget === v ? C.green : C.g200), background: recBudget === v ? C.g50 : C.white, color: recBudget === v ? C.navy : C.g600, fontFamily: F.body, fontSize: 12, fontWeight: recBudget === v ? 700 : 400, cursor: "pointer", textAlign: "center" }}>{lbl}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.navy, fontFamily: F.body, marginBottom: 6 }}>Minimum Term (years): {recTerm}</label>
+              <input type="range" min={5} max={30} step={5} value={recTerm} onChange={e => setRecTerm(Number(e.target.value))} style={{ width: "100%", accentColor: C.green }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.g400, fontFamily: F.body }}><span>5yr</span><span>10yr</span><span>15yr</span><span>20yr</span><span>25yr</span><span>30yr</span></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
+            <Btn secondary onClick={() => setPath(null)}>← Back</Btn>
+            <Btn primary onClick={getRecommendations}>Get Recommendations →</Btn>
+          </div>
+        </div>
+      </div>
+    );
+
+    // Results view
+    return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={{...modal, maxWidth: 900}} onClick={e => e.stopPropagation()}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Top Warranty Matches</h2>
+            <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+          </div>
+          <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 20 }}>
+            {recResults && recResults.length} warranties matched{recMembrane ? " for " + recMembrane + " membrane" : ""} with {recTerm}+ year term.
+          </p>
+          <div style={{ display: "grid", gap: 14 }}>
+            {(recResults || []).map((w, i) => (
+              <div key={w.id} style={{ border: "1.5px solid " + (i === 0 ? C.green : C.g200), borderRadius: 14, padding: 18, background: i === 0 ? C.g50 : C.white }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      {i === 0 && <span style={{ background: C.green, color: C.white, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>BEST MATCH</span>}
+                      <span style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.name}</span>
+                    </div>
+                    <span style={{ fontSize: 12, color: C.g500, fontFamily: F.body }}>{w.manufacturer} · {w.term}-year term</span>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <Stars n={w.rating} />
+                    <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                  {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Labor ✓</span>}
+                  {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Material ✓</span>}
+                  {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Transferable</span>}
+                  {w.consequential && <span style={{ background: "#fff3e0", color: "#e65100", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Consequential</span>}
+                  {!w.pondingExcluded && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Ponding OK</span>}
+                </div>
+                {w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+            <Btn secondary onClick={() => setStep(0)}>← Adjust Criteria</Btn>
+            <Btn secondary onClick={closeModal}>Done</Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function Accounts({ onSelectRoof }) {
