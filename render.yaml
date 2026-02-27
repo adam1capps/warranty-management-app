@@ -12,7 +12,6 @@ services:
   - type: web
     name: warranty-api
     runtime: node
-    plan: free
     rootDir: server
     buildCommand: npm install
     startCommand: node index.js
@@ -28,7 +27,6 @@ services:
   - type: web
     name: warranty-app
     runtime: static
-    plan: free
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     envVars:
