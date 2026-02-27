@@ -64,6 +64,7 @@ const pctUsed = (s, e) => {
   const a = new Date(s).getTime(), b = new Date(e).getTime();
   return Math.min(100, Math.max(0, ((Date.now() - a) / (b - a)) * 100));
 };
+const termYears = (s, e) => Math.round((new Date(e) - new Date(s)) / (365.25 * 864e5));
 
 // (Data is now fetched from the API — see api.js)
 // ── HELPERS ─────────────────────────────────────────────────────────
@@ -350,7 +351,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
 
   // ---- WARRANTY COMPARISON ----
   if (path === "compare") {
-    const filtered = WARRANTY_DB.filter(w => !compFilter || w.name.toLowerCase().includes(compFilter.toLowerCase()) || (w.manufacturer || "").toLowerCase().includes(compFilter.toLowerCase()));
+    const filtered = WARRANTY_DB.filter(w => !compFilter || w.name.toLowerCase().includes(compFilter.toLowerCase()) || (w.manufacturer || "").toLowerCase().includes(compFilter.toLowerCase()) || (w.membranes || []).some(m => m.toLowerCase().includes(compFilter.toLowerCase())));
     const selected = WARRANTY_DB.filter(w => compIds.includes(w.id));
     const toggleComp = (id) => setCompIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 4 ? [...prev, id] : prev);
 
@@ -370,8 +371,8 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                 {filtered.map(w => (
                   <button key={w.id} onClick={() => toggleComp(w.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: 10, border: "1.5px solid " + (compIds.includes(w.id) ? C.green : C.g200), background: compIds.includes(w.id) ? C.g50 : C.white, cursor: "pointer", textAlign: "left" }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.name}</div>
-                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.manufacturer} · {w.term}yr · Rating: {w.rating}/10</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</div>
+                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.name} · Rating: {w.rating}/10</div>
                     </div>
                     <div style={{ width: 20, height: 20, borderRadius: 4, border: "2px solid " + (compIds.includes(w.id) ? C.green : C.g300), background: compIds.includes(w.id) ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 12, fontWeight: 700 }}>{compIds.includes(w.id) ? "✓" : ""}</div>
                   </button>
@@ -389,7 +390,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                   <thead>
                     <tr style={{ background: C.g50 }}>
                       <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200 }}>Feature</th>
-                      {selected.map(w => <th key={w.id} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200, minWidth: 140 }}>{w.name}</th>)}
+                      {selected.map(w => <th key={w.id} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: C.navy, borderBottom: "2px solid " + C.g200, minWidth: 140 }}><div>{w.manufacturer} | {w.term}yr</div><div style={{ fontSize: 10, fontWeight: 400, color: C.g500 }}>{(w.membranes||[]).join(", ")}</div><div style={{ fontSize: 9, fontWeight: 400, color: C.g400 }}>{w.name}</div></th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -496,9 +497,9 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       {i === 0 && <span style={{ background: C.green, color: C.white, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: F.body }}>BEST MATCH</span>}
-                      <span style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.name}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</span>
                     </div>
-                    <span style={{ fontSize: 12, color: C.g500, fontFamily: F.body }}>{w.manufacturer} · {w.term}-year term</span>
+                    <span style={{ fontSize: 12, color: C.g500, fontFamily: F.body }}>{w.name}</span>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <Stars n={w.rating} />
@@ -586,10 +587,10 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
     return <div>
       <button onClick={() => setSelectedRoof(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.green, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", marginBottom: 20, padding: 0 }}>{Ic.back} All Warranties</button>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>{r.section}</h2>
-      <div style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 20 }}>{r.propName} · {r.propAddr}</div>
+      <div style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 8 }}>{r.propName} · {r.propAddr}</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: C.navy, fontFamily: F.head, marginBottom: 2 }}>{w.manufacturer} | {r.type} | {termYears(w.start, w.end)} Year</div>
+      <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginBottom: 20 }}>{w.wType}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
-        <KPI label="Manufacturer" value={w.manufacturer} icon={Ic.shield} />
-        <KPI label="Type" value={w.wType} icon={Ic.file} color={C.blue} />
         <KPI label="Warranty Used" value={`${p.toFixed(0)}%`} icon={Ic.clock} color={p > 75 ? C.yellow : C.green} sub={`Expires ${fmtDate(w.end)}`} />
         <KPI label="Next Inspection" value={days > 0 ? `${days} days` : "OVERDUE"} icon={Ic.cal} color={days > 60 ? C.green : days > 0 ? C.yellow : C.red} sub={fmtDate(w.nextInsp)} />
       </div>
@@ -668,8 +669,9 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
         <div style={{ fontSize: 12, color: C.g400, fontFamily: F.body, marginTop: 2 }}>{r.propName} · {r.ownerName}</div></div>
         <Badge status={w.compliance} />
       </div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: 12, color: C.g600, fontFamily: F.body }}>
-        <span>{w.manufacturer} {w.wType}</span><span>{r.type} · {r.sqFt.toLocaleString()} sqft</span>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {r.type} | {termYears(w.start, w.end)} Year</div>
+        <div style={{ fontSize: 11, color: C.g400, fontFamily: F.body, marginTop: 2 }}>{w.wType} · {r.sqFt.toLocaleString()} sqft</div>
       </div>
       <div style={{ marginTop: 10, height: 6, borderRadius: 3, background: C.g100, overflow: "hidden" }}>
         <div style={{ width: `${p}%`, height: "100%", borderRadius: 3, background: p > 75 ? C.yellow : C.green }} />
