@@ -211,12 +211,154 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
   const [recTerm, setRecTerm] = useState(15);
   const [recResults, setRecResults] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  // AI Warranty Assistant state
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiViewMode, setAiViewMode] = useState("concise");
+  const [showSaved, setShowSaved] = useState(false);
+  const [savedSpecs, setSavedSpecs] = useState(() => { try { return JSON.parse(localStorage.getItem("wai_saved") || "[]"); } catch { return []; } });
+  const [aiInsights, setAiInsights] = useState(() => { try { return JSON.parse(localStorage.getItem("wai_insights") || '{"helpful":{},"queries":[]}'); } catch { return { helpful: {}, queries: [] }; } });
+  const [aiTyping, setAiTyping] = useState(false);
 
   if (!open) return null;
 
-  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); setExpandedId(null); };
+  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); setExpandedId(null); setAiMessages([]); setAiInput(""); setAiViewMode("concise"); setShowSaved(false); setAiTyping(false); };
 
   const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
+
+  // ── AI ASSISTANT ENGINE ────────────────────────────────────────
+  const persistInsights = (next) => { setAiInsights(next); localStorage.setItem("wai_insights", JSON.stringify(next)); };
+  const persistSaved = (next) => { setSavedSpecs(next); localStorage.setItem("wai_saved", JSON.stringify(next)); };
+
+  const parseContractorQuery = (text) => {
+    const lower = text.toLowerCase();
+    const intent = { membranes: [], manufacturers: [], minTerm: null, budget: null, keywords: [], askingSpecs: false, askingInspection: false, askingStrengths: false };
+    const membraneMap = { tpo: "TPO", pvc: "PVC", epdm: "EPDM", "mod bit": "Mod Bit", "modified bitumen": "Mod Bit", bur: "BUR", "built-up": "BUR", acrylic: "Acrylic", silicone: "Silicone", spf: "SPF", "spray foam": "SPF" };
+    Object.entries(membraneMap).forEach(([k, v]) => { if (lower.includes(k) && !intent.membranes.includes(v)) intent.membranes.push(v); });
+    const knownMfrs = [...new Set(WARRANTY_DB.map(w => w.manufacturer))];
+    knownMfrs.forEach(m => { if (lower.includes(m.toLowerCase())) intent.manufacturers.push(m); });
+    const termMatch = lower.match(/(\d+)\s*[-\s]?\s*(?:year|yr)/);
+    if (termMatch) intent.minTerm = parseInt(termMatch[1]);
+    if (/cheap|budget|economy|affordable|low.?cost/.test(lower)) intent.budget = "low";
+    if (/premium|best|top|high.?end|deluxe/.test(lower)) intent.budget = "high";
+    if (/spec|specification|requirement|need|install/.test(lower)) intent.askingSpecs = true;
+    if (/inspect|maintenance|check/.test(lower)) intent.askingInspection = true;
+    if (/strength|advantage|pro|benefit|good/.test(lower)) intent.askingStrengths = true;
+    if (/weak|disadvantage|con|downside|bad|issue/.test(lower)) intent.askingStrengths = true;
+    return intent;
+  };
+
+  const matchWarranties = (intent) => {
+    let pool = [...WARRANTY_DB];
+    if (intent.membranes.length) pool = pool.filter(w => (w.membranes || []).some(m => intent.membranes.includes(m)));
+    if (intent.manufacturers.length) pool = pool.filter(w => intent.manufacturers.includes(w.manufacturer));
+    if (intent.minTerm) pool = pool.filter(w => w.term >= intent.minTerm * 0.8);
+    if (intent.budget === "low") pool = pool.filter(w => w.rating <= 7);
+    if (intent.budget === "high") pool = pool.filter(w => w.rating >= 8);
+    // Boost warranties that contractors found helpful
+    const helpful = aiInsights.helpful || {};
+    pool.sort((a, b) => {
+      const ha = helpful[a.id] || 0, hb = helpful[b.id] || 0;
+      if (hb !== ha) return hb - ha;
+      return b.rating - a.rating;
+    });
+    return pool.slice(0, 6);
+  };
+
+  const generateAiResponse = (text, matches, intent) => {
+    if (matches.length === 0) return "I couldn't find any warranties matching your criteria. Try broadening your search — for example, mention a membrane type (TPO, PVC, EPDM), a manufacturer, or a term length.";
+    const memStr = intent.membranes.length ? intent.membranes.join("/") : "all membrane types";
+    const mfrStr = intent.manufacturers.length ? intent.manufacturers.join(", ") : "";
+    const termStr = intent.minTerm ? `${intent.minTerm}+ year` : "";
+    let intro = `Found ${matches.length} warrant${matches.length > 1 ? "ies" : "y"} matching`;
+    const parts = [];
+    if (mfrStr) parts.push(mfrStr);
+    parts.push(memStr);
+    if (termStr) parts.push(termStr + " term");
+    intro += " " + parts.join(" · ") + ".";
+    const helpful = aiInsights.helpful || {};
+    const anyHelpful = matches.some(w => (helpful[w.id] || 0) >= 1);
+    if (anyHelpful) intro += " Results include warranties other contractors have found helpful.";
+    if (intent.askingSpecs) intro += " Here are the full specs:";
+    else if (intent.askingInspection) intro += " Inspection details included below:";
+    return intro;
+  };
+
+  const handleAiSend = (overrideText) => {
+    const text = (overrideText || aiInput).trim();
+    if (!text) return;
+    const userMsg = { id: Date.now(), role: "user", text, ts: new Date().toISOString() };
+    setAiMessages(prev => [...prev, userMsg]);
+    setAiInput("");
+    setAiTyping(true);
+    // Track query
+    const nextInsights = { ...aiInsights, queries: [...(aiInsights.queries || []), { q: text, ts: new Date().toISOString() }] };
+    persistInsights(nextInsights);
+    // Simulate processing delay
+    setTimeout(() => {
+      const intent = parseContractorQuery(text);
+      const matches = matchWarranties(intent);
+      const reply = generateAiResponse(text, matches, intent);
+      const assistantMsg = { id: Date.now() + 1, role: "assistant", text: reply, warranties: matches, intent, ts: new Date().toISOString(), ratings: {} };
+      setAiMessages(prev => [...prev, assistantMsg]);
+      setAiTyping(false);
+    }, 600 + Math.random() * 400);
+  };
+
+  const rateWarranty = (msgId, warrantyId, positive) => {
+    setAiMessages(prev => prev.map(m => m.id === msgId ? { ...m, ratings: { ...(m.ratings || {}), [warrantyId]: positive } } : m));
+    if (positive) {
+      const next = { ...aiInsights, helpful: { ...(aiInsights.helpful || {}), [warrantyId]: ((aiInsights.helpful || {})[warrantyId] || 0) + 1 } };
+      persistInsights(next);
+    }
+  };
+
+  const saveSpecFromMsg = (msg) => {
+    const entry = { id: Date.now(), query: aiMessages.find(m => m.role === "user" && m.id < msg.id)?.text || "Saved spec", warranties: msg.warranties || [], ts: new Date().toISOString() };
+    const next = [entry, ...savedSpecs];
+    persistSaved(next);
+  };
+
+  const deleteSavedSpec = (specId) => { persistSaved(savedSpecs.filter(s => s.id !== specId)); };
+
+  const downloadSpecPdf = (warranties, title) => {
+    const rows = warranties.map(w => `
+      <div style="border:1px solid #ccc;border-radius:8px;padding:16px;margin-bottom:12px;page-break-inside:avoid">
+        <h3 style="margin:0 0 4px;color:#0B1F3F">${w.manufacturer} | ${(w.membranes||[]).join(", ")} | ${w.term} Year</h3>
+        <p style="margin:0 0 10px;color:#666;font-size:12px">${w.name}</p>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Rating</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.rating}/10</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Labor Covered</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.laborCovered?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Material Covered</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.materialCovered?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Consequential Damages</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.consequential?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Dollar Cap</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.dollarCap||"N/A"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Transferable</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.transferable?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Ponding Excluded</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.pondingExcluded?"Yes":"No"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Wind Limit</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.windLimit||"Standard"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Inspection Freq</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.inspFreq||"N/A"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Inspected By</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.inspBy||"N/A"}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Membranes</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${(w.membranes||[]).join(", ")}</td></tr>
+          <tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>Category</b></td><td style="padding:4px 8px;border-bottom:1px solid #eee">${w.category}</td></tr>
+        </table>
+        ${(w.strengths||[]).length ? '<p style="margin:8px 0 2px;font-weight:bold;color:#388e3c;font-size:12px">Strengths</p><ul style="margin:0;padding-left:18px;font-size:12px">' + w.strengths.map(s=>'<li>'+s+'</li>').join('') + '</ul>' : ''}
+        ${(w.weaknesses||[]).length ? '<p style="margin:8px 0 2px;font-weight:bold;color:#d32f2f;font-size:12px">Weaknesses</p><ul style="margin:0;padding-left:18px;font-size:12px">' + w.weaknesses.map(s=>'<li>'+s+'</li>').join('') + '</ul>' : ''}
+        ${w.bestFor ? '<p style="margin:8px 0 0;font-style:italic;font-size:12px;color:#666">Best for: '+w.bestFor+'</p>' : ''}
+      </div>
+    `).join("");
+    const html = '<!DOCTYPE html><html><head><title>Warranty Spec Sheet</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;color:#333}@media print{body{padding:12px}}</style></head><body><h1 style="color:#0B1F3F;font-size:20px;margin-bottom:4px">Warranty Spec Sheet</h1><p style="color:#666;font-size:13px;margin-bottom:20px">' + title + ' &mdash; Generated ' + new Date().toLocaleDateString() + '</p>' + rows + '<p style="text-align:center;color:#aaa;font-size:10px;margin-top:24px">Generated by RoofTracker Warranty Management</p></body></html>';
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const AI_SUGGESTIONS = [
+    "I have a TPO roof — what's the best 20-year warranty?",
+    "What are the inspection requirements for GAF warranties?",
+    "Show me Carlisle PVC warranty specs",
+    "Best budget-friendly EPDM warranty options?",
+    "Which warranties cover consequential damages?",
+    "Compare Sika Sarnafil vs Carlisle for PVC roofs",
+  ];
 
   const WarrantyExpand = ({ w }) => (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
@@ -281,7 +423,8 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           {[
             { id: "setup", icon: Ic.accounts, title: "New Property Setup", desc: "Register a new property and configure roof sections for warranty tracking." },
             { id: "compare", icon: Ic.warranties, title: "Warranty Comparison", desc: "Compare up to 4 warranties side by side across key coverage dimensions." },
-            { id: "recommend", icon: Ic.inspections, title: "Warranty Recommendation", desc: "Get AI-matched warranty suggestions based on roof profile and budget." }
+            { id: "recommend", icon: Ic.inspections, title: "Warranty Recommendation", desc: "Get AI-matched warranty suggestions based on roof profile and budget." },
+            { id: "ai", icon: Ic.zap, title: "AI Spec Assistant", desc: "Ask questions in plain English. Get spec sheets, coverage details, and save answers for later." }
           ].map(p => (
             <button key={p.id} onClick={() => setPath(p.id)} style={{ background: C.white, border: "2px solid " + C.g200, borderRadius: 14, padding: 20, textAlign: "left", cursor: "pointer", transition: "all .2s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.background = C.g50; }}
@@ -581,6 +724,195 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
             <Btn secondary onClick={() => setStep(0)}>← Adjust Criteria</Btn>
             <Btn secondary onClick={closeModal}>Done</Btn>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- AI SPEC ASSISTANT ----
+  if (path === "ai") {
+    const msgContainerRef = { current: null };
+    const helpful = aiInsights.helpful || {};
+
+    const ConciseCard = ({ w, msgId }) => (
+      <div style={{ border: `1.5px solid ${C.g200}`, borderRadius: 10, padding: "10px 14px", marginBottom: 6, background: C.white }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term}yr</span>
+          <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+          {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Labor</span>}
+          {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Material</span>}
+          {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Transferable</span>}
+          {w.consequential && <span style={{ background: "#fff3e0", color: "#e65100", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Consequential</span>}
+          {(helpful[w.id] || 0) >= 1 && <span style={{ background: "#fce4ec", color: "#c62828", padding: "1px 6px", borderRadius: 4, fontSize: 9, fontFamily: F.body }}>Contractor Favorite</span>}
+        </div>
+        {w.bestFor && <div style={{ fontSize: 11, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>}
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, true); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11 }} title="Helpful">👍</button>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, false); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontSize: 11 }} title="Not helpful">👎</button>
+        </div>
+      </div>
+    );
+
+    const ExpandedCard = ({ w, msgId }) => (
+      <div style={{ border: `1.5px solid ${C.g200}`, borderRadius: 10, padding: "12px 16px", marginBottom: 8, background: C.white }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Stars n={w.rating} />
+            <span style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</span>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body, marginBottom: 8 }}>{w.name}</div>
+        {(helpful[w.id] || 0) >= 1 && <div style={{ fontSize: 10, color: "#c62828", fontFamily: F.body, marginBottom: 8, fontWeight: 600 }}>Contractors found this helpful ({helpful[w.id]}x)</div>}
+        <WarrantyExpand w={w} />
+        <div style={{ display: "flex", gap: 6, marginTop: 8, borderTop: `1px solid ${C.g100}`, paddingTop: 8 }}>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, true); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>👍 Helpful</button>
+          <button onClick={(e) => { e.stopPropagation(); rateWarranty(msgId, w.id, false); }} style={{ background: "none", border: "1px solid " + C.g200, borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>👎 Not useful</button>
+        </div>
+      </div>
+    );
+
+    return (
+      <div style={overlay} onClick={closeModal}>
+        <div style={{ ...modal, maxWidth: 900, display: "flex", flexDirection: "column", padding: 0 }} onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div style={{ padding: "20px 24px 0", borderBottom: `1px solid ${C.g100}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>{Ic.zap} AI Spec Assistant</h2>
+              <button onClick={closeModal} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.g400 }}>×</button>
+            </div>
+            <div style={{ display: "flex", gap: 0, marginBottom: 0 }}>
+              <button onClick={() => setShowSaved(false)} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: F.head, color: !showSaved ? C.navy : C.g400, background: "none", border: "none", borderBottom: !showSaved ? `2px solid ${C.green}` : "2px solid transparent", cursor: "pointer" }}>Chat</button>
+              <button onClick={() => setShowSaved(true)} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: F.head, color: showSaved ? C.navy : C.g400, background: "none", border: "none", borderBottom: showSaved ? `2px solid ${C.green}` : "2px solid transparent", cursor: "pointer" }}>Saved Specs ({savedSpecs.length})</button>
+            </div>
+          </div>
+
+          {showSaved ? (
+            /* ── SAVED SPECS LIBRARY ── */
+            <div style={{ padding: 24, flex: 1, overflowY: "auto" }}>
+              {savedSpecs.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: C.g400 }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>{Ic.file}</div>
+                  <div style={{ fontSize: 14, fontFamily: F.body }}>No saved specs yet. Chat with the assistant and save helpful results.</div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {savedSpecs.map(spec => (
+                    <div key={spec.id} style={{ border: `1.5px solid ${C.g200}`, borderRadius: 12, padding: 16, background: C.white }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 2 }}>{spec.query}</div>
+                          <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{spec.warranties.length} warrant{spec.warranties.length !== 1 ? "ies" : "y"} · Saved {new Date(spec.ts).toLocaleDateString()}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => downloadSpecPdf(spec.warranties, spec.query)} style={{ background: C.green, color: C.white, border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>PDF</button>
+                          <button onClick={() => deleteSavedSpec(spec.id)} style={{ background: "none", border: `1px solid ${C.g200}`, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: C.red }}>Delete</button>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {spec.warranties.map(w => (
+                          <span key={w.id} style={{ background: C.g50, border: `1px solid ${C.g200}`, borderRadius: 6, padding: "2px 8px", fontSize: 10, color: C.navy, fontFamily: F.body }}>{w.manufacturer} {w.term}yr {(w.membranes||[]).join("/")}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── CHAT INTERFACE ── */
+            <>
+              {/* View mode toggle + DB info */}
+              <div style={{ padding: "10px 24px", borderBottom: `1px solid ${C.g100}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>Searching {WARRANTY_DB.length} warranties · {Object.keys(helpful).length > 0 ? Object.keys(helpful).length + " contractor-rated" : "Learning from your feedback"}</span>
+                <div style={{ display: "flex", gap: 0, border: `1px solid ${C.g200}`, borderRadius: 6, overflow: "hidden" }}>
+                  {[["concise", "Concise"], ["expanded", "Full Specs"]].map(([k, lbl]) => (
+                    <button key={k} onClick={() => setAiViewMode(k)} style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, fontFamily: F.head, background: aiViewMode === k ? C.navy : C.white, color: aiViewMode === k ? C.white : C.g600, border: "none", cursor: "pointer" }}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Messages area */}
+              <div ref={el => { msgContainerRef.current = el; if (el) el.scrollTop = el.scrollHeight; }} style={{ flex: 1, overflowY: "auto", padding: 24, minHeight: 300, maxHeight: "calc(90vh - 260px)" }}>
+                {aiMessages.length === 0 && !aiTyping && (
+                  <div style={{ textAlign: "center", padding: "24px 0" }}>
+                    <div style={{ fontSize: 36, marginBottom: 8 }}>{Ic.zap}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 4 }}>Ask me about warranty specs</div>
+                    <div style={{ fontSize: 12, color: C.g500, fontFamily: F.body, marginBottom: 20, maxWidth: 400, margin: "0 auto 20px" }}>Describe your roof, mention a manufacturer, membrane, or term length. I will find matching warranties and show you the full specs.</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+                      {AI_SUGGESTIONS.map((s, i) => (
+                        <button key={i} onClick={() => handleAiSend(s)} style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${C.g200}`, background: C.white, color: C.navy, fontSize: 12, fontFamily: F.body, cursor: "pointer", textAlign: "left", maxWidth: 260, transition: "all .15s" }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; e.currentTarget.style.background = C.g50; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = C.g200; e.currentTarget.style.background = C.white; }}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiMessages.map(msg => (
+                  <div key={msg.id} style={{ marginBottom: 16 }}>
+                    {msg.role === "user" ? (
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <div style={{ background: C.navy, color: C.white, padding: "10px 16px", borderRadius: "14px 14px 4px 14px", maxWidth: "75%", fontSize: 13, fontFamily: F.body, lineHeight: 1.5 }}>{msg.text}</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                          <span style={{ background: C.green, color: C.white, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>AI</span>
+                          <span style={{ fontSize: 11, color: C.g400, fontFamily: F.body }}>Spec Assistant</span>
+                        </div>
+                        <div style={{ background: C.g50, padding: "12px 16px", borderRadius: "4px 14px 14px 14px", maxWidth: "90%", fontSize: 13, fontFamily: F.body, lineHeight: 1.5, color: C.navy }}>
+                          <div style={{ marginBottom: (msg.warranties || []).length > 0 ? 10 : 0 }}>{msg.text}</div>
+                          {(msg.warranties || []).length > 0 && (
+                            <>
+                              {(msg.warranties).map(w => (
+                                aiViewMode === "concise"
+                                  ? <ConciseCard key={w.id} w={w} msgId={msg.id} />
+                                  : <ExpandedCard key={w.id} w={w} msgId={msg.id} />
+                              ))}
+                              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                                <button onClick={() => saveSpecFromMsg(msg)} style={{ background: C.green, color: C.white, border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>Save These Specs</button>
+                                <button onClick={() => downloadSpecPdf(msg.warranties, msg.text.slice(0, 60))} style={{ background: C.white, color: C.navy, border: `1px solid ${C.g200}`, borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.head }}>Download PDF</button>
+                              </div>
+                            </>
+                          )}
+                          {/* Show feedback status */}
+                          {msg.ratings && Object.keys(msg.ratings).length > 0 && (
+                            <div style={{ marginTop: 6, fontSize: 10, color: C.g400, fontFamily: F.body }}>
+                              {Object.values(msg.ratings).filter(Boolean).length > 0 && "Thanks for your feedback — this helps improve future results."}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {aiTyping && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
+                    <span style={{ background: C.green, color: C.white, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>AI</span>
+                    <div style={{ background: C.g50, padding: "10px 16px", borderRadius: "4px 14px 14px 14px", fontSize: 13, fontFamily: F.body, color: C.g400 }}>Searching warranty database...</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Input area */}
+              <div style={{ padding: "12px 24px 16px", borderTop: `1px solid ${C.g100}`, background: C.white }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAiSend(); } }} placeholder='Try: "I have a TPO roof and need a 20-year warranty..."' style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, fontFamily: F.body, fontSize: 13, outline: "none", color: C.navy }} />
+                  <Btn primary onClick={() => handleAiSend()} style={{ opacity: aiInput.trim() ? 1 : 0.4 }}>Send</Btn>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                  <span style={{ fontSize: 10, color: C.g400, fontFamily: F.body }}>Press Enter to send · Mention membrane, manufacturer, or term length</span>
+                  <button onClick={() => setPath(null)} style={{ background: "none", border: "none", fontSize: 11, color: C.g400, cursor: "pointer", fontFamily: F.body }}>← Back to menu</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
