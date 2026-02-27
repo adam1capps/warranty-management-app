@@ -210,10 +210,59 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
   const [recBudget, setRecBudget] = useState("mid");
   const [recTerm, setRecTerm] = useState(15);
   const [recResults, setRecResults] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   if (!open) return null;
 
-  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); };
+  const reset = () => { setPath(null); setStep(0); setPropName(""); setPropAddr(""); setPropType("Commercial"); setRoofType(""); setRoofAge(""); setRoofSqft(""); setRoofMembrane(""); setSetupDone(false); setCompIds([]); setCompFilter(""); setRecMembrane(""); setRecBudget("mid"); setRecTerm(15); setRecResults(null); setExpandedId(null); };
+
+  const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
+
+  const WarrantyExpand = ({ w }) => (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.g200}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 6, marginBottom: 12 }}>
+        {[
+          ["Labor Covered", w.laborCovered, false],
+          ["Material Covered", w.materialCovered, false],
+          ["Consequential", w.consequential, false],
+          ["Transferable", w.transferable, false],
+          ["Ponding Excluded", w.pondingExcluded, true],
+        ].map(([label, val, invert]) => (
+          <div key={label} style={{ fontSize: 11, fontFamily: F.body, color: C.g600 }}>
+            <span>{(invert ? !val : val) ? "✅" : "❌"}</span> {label}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {[
+          ["Dollar Cap", w.dollarCap || "N/A"],
+          ["Wind Limit", w.windLimit || "Standard"],
+          ["Inspection Freq", w.inspFreq || "N/A"],
+          ["Inspected By", w.inspBy || "N/A"],
+          ["Category", w.category],
+          ["Membranes", (w.membranes || []).join(", ")],
+        ].map(([label, val]) => (
+          <div key={label}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.g400, fontFamily: F.head, textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
+            <div style={{ fontSize: 12, color: C.navy, fontFamily: F.body }}>{val}</div>
+          </div>
+        ))}
+      </div>
+      {(w.strengths || []).length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.green, fontFamily: F.head, marginBottom: 4 }}>Strengths</div>
+          {w.strengths.map((s, i) => <div key={i} style={{ fontSize: 12, color: C.g600, fontFamily: F.body, marginBottom: 2, paddingLeft: 14, position: "relative" }}><span style={{ color: C.green, position: "absolute", left: 0 }}>✓</span> {s}</div>)}
+        </div>
+      )}
+      {(w.weaknesses || []).length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.red, fontFamily: F.head, marginBottom: 4 }}>Weaknesses</div>
+          {w.weaknesses.map((s, i) => <div key={i} style={{ fontSize: 12, color: C.g600, fontFamily: F.body, marginBottom: 2, paddingLeft: 14, position: "relative" }}><span style={{ color: C.red, position: "absolute", left: 0 }}>✕</span> {s}</div>)}
+        </div>
+      )}
+      {w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic", marginTop: 4 }}>Best for: {w.bestFor}</div>}
+    </div>
+  );
 
   const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 };
   const modal = { background: C.white, borderRadius: 20, padding: 32, maxWidth: 820, width: "95vw", maxHeight: "90vh", overflowY: "auto", position: "relative" };
@@ -367,15 +416,19 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
             <div>
               <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, marginBottom: 16 }}>Select up to 4 warranties to compare side by side.</p>
               <input value={compFilter} onChange={e => setCompFilter(e.target.value)} placeholder="Search warranties..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + C.g200, fontFamily: F.body, fontSize: 13, marginBottom: 16, boxSizing: "border-box" }} />
-              <div style={{ maxHeight: 400, overflowY: "auto", display: "grid", gap: 8 }}>
+              <div style={{ maxHeight: 500, overflowY: "auto", display: "grid", gap: 8 }}>
                 {filtered.map(w => (
-                  <button key={w.id} onClick={() => toggleComp(w.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: 10, border: "1.5px solid " + (compIds.includes(w.id) ? C.green : C.g200), background: compIds.includes(w.id) ? C.g50 : C.white, cursor: "pointer", textAlign: "left" }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</div>
-                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.name} · Rating: {w.rating}/10</div>
+                  <div key={w.id} style={{ borderRadius: 10, border: "1.5px solid " + (compIds.includes(w.id) ? C.green : expandedId === w.id ? C.blue : C.g200), background: compIds.includes(w.id) ? C.g50 : C.white, textAlign: "left" }}>
+                    <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 12 }}>
+                      <div onClick={(e) => { e.stopPropagation(); toggleComp(w.id); }} style={{ width: 20, height: 20, borderRadius: 4, border: "2px solid " + (compIds.includes(w.id) ? C.green : C.g300), background: compIds.includes(w.id) ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>{compIds.includes(w.id) ? "✓" : ""}</div>
+                      <div onClick={() => toggleExpand(w.id)} style={{ flex: 1, cursor: "pointer" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body }}>{w.manufacturer} | {(w.membranes||[]).join(", ")} | {w.term} Year</div>
+                        <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.name} · Rating: {w.rating}/10</div>
+                      </div>
+                      <div onClick={() => toggleExpand(w.id)} style={{ cursor: "pointer", color: C.g400, transform: expandedId === w.id ? "rotate(90deg)" : "none", transition: "transform 0.15s ease", flexShrink: 0 }}>{Ic.chevR}</div>
                     </div>
-                    <div style={{ width: 20, height: 20, borderRadius: 4, border: "2px solid " + (compIds.includes(w.id) ? C.green : C.g300), background: compIds.includes(w.id) ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 12, fontWeight: 700 }}>{compIds.includes(w.id) ? "✓" : ""}</div>
-                  </button>
+                    {expandedId === w.id && <div style={{ padding: "0 16px 14px" }}><WarrantyExpand w={w} /></div>}
+                  </div>
                 ))}
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
@@ -492,7 +545,7 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
           </p>
           <div style={{ display: "grid", gap: 14 }}>
             {(recResults || []).map((w, i) => (
-              <div key={w.id} style={{ border: "1.5px solid " + (i === 0 ? C.green : C.g200), borderRadius: 14, padding: 18, background: i === 0 ? C.g50 : C.white }}>
+              <div key={w.id} onClick={() => toggleExpand(w.id)} style={{ border: "1.5px solid " + (i === 0 ? C.green : expandedId === w.id ? C.blue : C.g200), borderRadius: 14, padding: 18, background: i === 0 ? C.g50 : C.white, cursor: "pointer" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -501,19 +554,26 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
                     </div>
                     <span style={{ fontSize: 12, color: C.g500, fontFamily: F.body }}>{w.name}</span>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <Stars n={w.rating} />
-                    <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <Stars n={w.rating} />
+                      <div style={{ fontSize: 11, color: C.g500, fontFamily: F.body }}>{w.rating}/10</div>
+                    </div>
+                    <div style={{ color: C.g400, transform: expandedId === w.id ? "rotate(90deg)" : "none", transition: "transform 0.15s ease" }}>{Ic.chevR}</div>
                   </div>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: expandedId === w.id ? 0 : 10 }}>
                   {w.laborCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Labor ✓</span>}
                   {w.materialCovered && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Material ✓</span>}
                   {w.transferable && <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Transferable</span>}
                   {w.consequential && <span style={{ background: "#fff3e0", color: "#e65100", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Consequential</span>}
                   {!w.pondingExcluded && <span style={{ background: "#e8f5e9", color: "#2e7d32", padding: "2px 8px", borderRadius: 6, fontSize: 10, fontFamily: F.body }}>Ponding OK</span>}
                 </div>
-                {w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>}
+                {expandedId === w.id ? (
+                  <WarrantyExpand w={w} />
+                ) : (
+                  w.bestFor && <div style={{ fontSize: 12, color: C.g600, fontFamily: F.body, fontStyle: "italic" }}>Best for: {w.bestFor}</div>
+                )}
               </div>
             ))}
           </div>
