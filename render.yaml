@@ -31,7 +31,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
-        value: https://warranty-api.onrender.com/api
+        value: https://warranty-api-7uez.onrender.com/api
     routes:
       - type: rewrite
         source: /*
