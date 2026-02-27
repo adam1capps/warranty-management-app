@@ -877,7 +877,7 @@ export default function App() {
     <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 32px" }}>
       {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 32px" }}>
+    <div style={{ padding: "24px 32px" }}>
       {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} />}
       {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} />}
       {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} />}
