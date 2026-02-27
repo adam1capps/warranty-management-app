@@ -1,4 +1,4 @@
-import { fetchSheetData, submitPricingToSheet, fetchPricingStore } from "./sheetsApi";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims } from "./api";
 import { useState, useEffect } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -65,162 +65,14 @@ const pctUsed = (s, e) => {
   return Math.min(100, Math.max(0, ((Date.now() - a) / (b - a)) * 100));
 };
 
-// ── MOCK DATA ──────────────────────────────────────────────────────
-const OWNERS = [
-  {
-    id: "own-1", name: "Vanderbilt Capital Partners",
-    contact: "Richard Vanderbilt III", email: "rvanderbilt@vcpartners.com", phone: "(615) 555-0100",
-    notes: "Owns 12 commercial properties across Middle TN. Long-term hold strategy.",
-    pms: [
-      { id: "pm-1", name: "Cornerstone Property Management", contact: "Sarah Mitchell", email: "smitchell@cornerstonepm.com", phone: "(615) 555-0150", notes: "Manages 6 of VCP's Nashville properties" }
-    ],
-    properties: [
-      {
-        id: "prop-1", name: "Riverside Office Complex", address: "1420 Commerce Blvd, Nashville, TN", managedBy: "pm-1",
-        roofs: [
-          { id: "r-1a", section: "Main Building — Flat", sqFt: 22000, type: "TPO", installed: "2019-06-15",
-            warranty: { manufacturer: "GAF", wType: "NDL (No Dollar Limit)", start: "2019-06-15", end: "2039-06-15", status: "active", compliance: "current", nextInsp: "2026-06-15", lastInsp: "2025-12-10",
-              coverage: ["Membrane material defects", "Manufacturing flaws", "Seam failure", "Flashing defects"],
-              exclusions: ["Foot traffic damage", "Acts of God (wind >74mph)", "Unauthorized modifications", "Ponding water >48hrs"],
-              requirements: ["Biannual inspection by certified contractor", "Maintain drainage systems", "Report damage within 30 days", "No unauthorized penetrations"]
-            }
-          },
-          { id: "r-1b", section: "Warehouse Wing", sqFt: 35000, type: "EPDM", installed: "2017-03-20",
-            warranty: { manufacturer: "Carlisle", wType: "Material Only", start: "2017-03-20", end: "2032-03-20", status: "active", compliance: "at-risk", nextInsp: "2026-03-20", lastInsp: "2024-09-15",
-              coverage: ["Membrane material defects", "Adhesive failure"],
-              exclusions: ["Workmanship", "Foot traffic damage", "Chemical exposure", "Ponding water"],
-              requirements: ["Annual inspection", "Maintain all flashings", "Professional repairs only"]
-            }
-          }
-        ]
-      },
-      {
-        id: "prop-2", name: "Commerce Park Building A", address: "2200 West End Ave, Nashville, TN", managedBy: "pm-1",
-        roofs: [
-          { id: "r-2a", section: "Full Roof", sqFt: 18000, type: "TPO", installed: "2021-04-10",
-            warranty: { manufacturer: "GAF", wType: "NDL (No Dollar Limit)", start: "2021-04-10", end: "2041-04-10", status: "active", compliance: "current", nextInsp: "2026-10-10", lastInsp: "2025-10-08",
-              coverage: ["Material defects", "Manufacturing flaws", "Membrane failure"],
-              exclusions: ["Foot traffic", "Acts of God", "Unauthorized modifications"],
-              requirements: ["Biannual inspection", "Maintain drainage", "30-day damage reporting"]
-            }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "own-2", name: "Greenway Health Systems",
-    contact: "Dr. Marcia Langford", email: "mlangford@greenwayhealthsys.com", phone: "(615) 555-0300",
-    notes: "Healthcare REIT. Extremely sensitive to leaks — medical equipment and patient safety.",
-    pms: [],
-    properties: [
-      {
-        id: "prop-3", name: "Greenway Medical Center", address: "800 Medical Center Dr, Franklin, TN",
-        roofs: [
-          { id: "r-3a", section: "East Wing", sqFt: 45000, type: "PVC", installed: "2020-09-01",
-            warranty: { manufacturer: "Sika Sarnafil", wType: "Full System", start: "2020-09-01", end: "2040-09-01", status: "active", compliance: "current", nextInsp: "2026-09-01", lastInsp: "2025-08-20",
-              coverage: ["Full system warranty", "Material and labor", "Consequential damages up to $500K"],
-              exclusions: ["Acts of God", "Third-party damage", "Unauthorized modifications"],
-              requirements: ["Annual manufacturer inspection", "Maintain rooftop equipment pads", "Quarterly drain cleaning"]
-            }
-          },
-          { id: "r-3b", section: "West Wing", sqFt: 38000, type: "TPO", installed: "2018-11-15",
-            warranty: { manufacturer: "Versico", wType: "Material + Labor", start: "2018-11-15", end: "2033-11-15", status: "active", compliance: "at-risk", nextInsp: "2026-05-15", lastInsp: "2024-11-20",
-              coverage: ["Membrane defects", "Seam failure", "Labor for warranty repairs"],
-              exclusions: ["Ponding water", "Foot traffic", "HVAC damage"],
-              requirements: ["Biannual inspection", "No rooftop storage", "Report leaks within 14 days"]
-            }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "own-3", name: "Summit Retail Holdings",
-    contact: "James Thornton", email: "jthornton@summitretail.com", phone: "(615) 555-0400",
-    notes: "Strip mall portfolio. Price-sensitive, but understands warranty value after losing coverage on Cool Springs location.",
-    pms: [
-      { id: "pm-2", name: "Alliance Facility Services", contact: "Mike Rodriguez", email: "mrodriguez@alliancefs.com", phone: "(615) 555-0450", notes: "Handles all maintenance for Summit's retail portfolio" }
-    ],
-    properties: [
-      {
-        id: "prop-4", name: "Harding Pike Shopping Center", address: "4500 Harding Pike, Nashville, TN", managedBy: "pm-2",
-        roofs: [
-          { id: "r-4a", section: "Main Retail Strip", sqFt: 52000, type: "Modified Bitumen", installed: "2015-08-10",
-            warranty: { manufacturer: "Firestone", wType: "Material Only", start: "2015-08-10", end: "2030-08-10", status: "active", compliance: "expired-inspection", nextInsp: "2025-08-10", lastInsp: "2023-08-15",
-              coverage: ["Membrane material defects only"],
-              exclusions: ["All workmanship", "Ponding", "Foot traffic", "HVAC discharge"],
-              requirements: ["Annual certified inspection", "Professional repairs within 30 days of discovery"]
-            }
-          }
-        ]
-      },
-      {
-        id: "prop-5", name: "Nolensville Road Plaza", address: "3200 Nolensville Rd, Nashville, TN", managedBy: "pm-2",
-        roofs: [
-          { id: "r-5a", section: "Full Roof", sqFt: 28000, type: "TPO", installed: "2022-03-15",
-            warranty: { manufacturer: "GAF", wType: "NDL", start: "2022-03-15", end: "2042-03-15", status: "active", compliance: "current", nextInsp: "2026-09-15", lastInsp: "2025-09-10",
-              coverage: ["Full membrane coverage", "Manufacturing defects", "Seam integrity"],
-              exclusions: ["Foot traffic", "Unauthorized penetrations", "Wind >74mph"],
-              requirements: ["Biannual inspection", "Maintain drainage", "30-day reporting"]
-            }
-          }
-        ]
-      }
-    ]
-  }
-];
-const ACCESS_LOGS = [
-  { id: "al-1", roofId: "r-1a", person: "Mike Torres", company: "Nashville HVAC Pro", purpose: "HVAC unit service", date: "2025-12-08T09:30:00", duration: "2.5 hrs", notes: "Routine condenser service. Used ladder at NE access." },
-  { id: "al-2", roofId: "r-1a", person: "Unknown", company: "Unknown", purpose: "Unauthorized access", date: "2025-12-12T14:15:00", duration: "Unknown", notes: "QR not scanned. Camera showed individual on roof near HVAC unit." },
-  { id: "al-3", roofId: "r-1a", person: "Billy Hargrove", company: "Riverland Roofing", purpose: "MRI moisture scan", date: "2025-12-18T08:00:00", duration: "3 hrs", notes: "Full scan completed. Puncture found near NE HVAC unit." },
-  { id: "al-4", roofId: "r-3a", person: "David Kim", company: "Greenway Facilities", purpose: "Drain inspection", date: "2026-01-05T10:00:00", duration: "45 min", notes: "Quarterly drain cleaning per warranty requirements." },
-  { id: "al-5", roofId: "r-4a", person: "Jeff Simmons", company: "Pinnacle Signs", purpose: "Sign installation", date: "2025-11-20T13:00:00", duration: "4 hrs", notes: "New tenant signage. Penetrations made without contractor notification." },
-  { id: "al-6", roofId: "r-1b", person: "Sarah Mitchell", company: "Cornerstone PM", purpose: "Annual walkthrough", date: "2026-01-15T11:00:00", duration: "1 hr", notes: "PM inspection. Noted ponding near drain #3." },
-];
-
-const INVOICES = [
-  { id: "inv-1", roofId: "r-1a", vendor: "Riverland Roofing", date: "2025-12-20", amount: 4200, desc: "Seam repair — NE section near HVAC", flagged: true, flagReason: "Seam separation may be covered under GAF NDL warranty", status: "review" },
-  { id: "inv-2", roofId: "r-1b", vendor: "Acme Roofing", date: "2025-10-15", amount: 1800, desc: "Flashing repair — west parapet", flagged: false, status: "paid" },
-  { id: "inv-3", roofId: "r-3b", vendor: "Quality Roof Repair", date: "2025-09-22", amount: 6500, desc: "Membrane patch — 200 sqft area", flagged: true, flagReason: "Membrane defect may fall under Versico Material + Labor coverage", status: "review" },
-  { id: "inv-4", roofId: "r-4a", vendor: "Pinnacle Roofing", date: "2025-11-30", amount: 3200, desc: "Emergency leak repair — tenant space", flagged: true, flagReason: "Leak may be linked to unauthorized sign penetration — third-party liability, not warranty", status: "review" },
-  { id: "inv-5", roofId: "r-5a", vendor: "Riverland Roofing", date: "2026-01-10", amount: 950, desc: "Drain basket replacement x3", flagged: false, status: "paid" },
-  { id: "inv-6", roofId: "r-3a", vendor: "Sika Sarnafil Direct", date: "2025-07-18", amount: 0, desc: "Warranty repair — manufacturer dispatched crew", flagged: false, status: "warranty" },
-];
-
-const INSPECTIONS = [
-  { id: "insp-1", roofId: "r-1a", date: "2025-12-10", inspector: "Billy Hargrove", company: "Riverland Roofing", type: "Biannual + MRI Scan", status: "completed", score: 87, photos: 24, moistureData: true, notes: "Puncture found near NE HVAC. Seam wear on south section. Drains clear." },
-  { id: "insp-2", roofId: "r-3a", date: "2025-08-20", inspector: "Adam G.", company: "Roof MRI", type: "Annual + MRI Scan", status: "completed", score: 94, photos: 18, moistureData: true, notes: "Excellent condition. All drains clear. No moisture detected." },
-  { id: "insp-3", roofId: "r-1a", date: "2026-06-15", inspector: "TBD", company: "TBD", type: "Biannual", status: "scheduled", score: null, photos: 0, moistureData: false, notes: "Due per GAF NDL requirements." },
-  { id: "insp-4", roofId: "r-4a", date: "2025-08-10", inspector: "—", company: "—", type: "Annual", status: "overdue", score: null, photos: 0, moistureData: false, notes: "OVERDUE. Last inspection Aug 2023. Warranty compliance at risk." },
-  { id: "insp-5", roofId: "r-1b", date: "2026-03-20", inspector: "TBD", company: "TBD", type: "Annual", status: "scheduled", score: null, photos: 0, moistureData: false, notes: "Carlisle requires annual inspection." },
-];
-
-const CLAIMS = [
-  { id: "cl-1", roofId: "r-3b", manufacturer: "Versico", filed: "2025-10-01", amount: 3200, status: "approved", desc: "Membrane delamination — 200 sqft area, west section",
-    timeline: [
-      { date: "2025-10-01", event: "Claim filed with Versico. Included MRI scan data, photos, and inspection report." },
-      { date: "2025-10-08", event: "Versico acknowledged receipt. Assigned claim #VER-2025-4412." },
-      { date: "2025-10-22", event: "Versico field rep inspected. Confirmed manufacturing defect in membrane batch." },
-      { date: "2025-11-05", event: "Claim approved. $3,200 repair authorized under Material + Labor warranty." },
-      { date: "2025-11-18", event: "Repair completed by Versico-authorized contractor." },
-    ]
-  },
-  { id: "cl-2", roofId: "r-1a", manufacturer: "GAF", filed: "2026-01-10", amount: 4200, status: "in-progress", desc: "Seam separation near HVAC unit — potential third-party cause",
-    timeline: [
-      { date: "2026-01-10", event: "Claim filed with GAF. Included MRI scan showing moisture at seam, QR access log showing unauthorized roof access 12/12." },
-      { date: "2026-01-15", event: "GAF acknowledged. Requested additional documentation on HVAC contractor visits." },
-      { date: "2026-01-28", event: "Submitted HVAC service records and QR access log timeline. Awaiting field inspection." },
-    ]
-  },
-];
+// (Data is now fetched from the API — see api.js)
 // ── HELPERS ─────────────────────────────────────────────────────────
-const allRoofs = () => {
+const allRoofs = (owners) => {
   const out = [];
-  OWNERS.forEach(o => o.properties.forEach(p => p.roofs.forEach(r => out.push({ ...r, propName: p.name, propAddr: p.address, ownerName: o.name }))));
+  (owners || []).forEach(o => o.properties.forEach(p => p.roofs.forEach(r => out.push({ ...r, propName: p.name, propAddr: p.address, ownerName: o.name }))));
   return out;
 };
-const findRoof = (id) => allRoofs().find(r => r.id === id);
+const findRoof = (owners, id) => allRoofs(owners).find(r => r.id === id);
 
 // ── BADGE ──────────────────────────────────────────────────────────
 const badgeStyles = {
@@ -299,46 +151,7 @@ const CORP_TIER = {
   "KARNAK": 2, "Everest Systems": 2, "FAR (Fluid Applied Roofing)": 2,
 };
 
-// ── CROWDSOURCED WARRANTY PRICING ─────────────────────────────────
-const initPricingStore = () => {
-  const seed = {
-    "w-gaf-ndl": { baseFee: [
-      { amount: 2500, submittedAt: "2025-11-01T00:00:00Z", status: "active" },
-      { amount: 2800, submittedAt: "2025-12-15T00:00:00Z", status: "active" },
-      { amount: 2650, submittedAt: "2026-01-20T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.08, submittedAt: "2025-11-01T00:00:00Z", status: "active" },
-      { amount: 0.09, submittedAt: "2025-12-15T00:00:00Z", status: "active" },
-      { amount: 0.085, submittedAt: "2026-01-20T00:00:00Z", status: "active" },
-    ]},
-    "c-gaco-sil-lm": { baseFee: [
-      { amount: 1800, submittedAt: "2025-10-10T00:00:00Z", status: "active" },
-      { amount: 2100, submittedAt: "2025-11-22T00:00:00Z", status: "active" },
-      { amount: 1950, submittedAt: "2026-01-05T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.06, submittedAt: "2025-10-10T00:00:00Z", status: "active" },
-      { amount: 0.07, submittedAt: "2025-11-22T00:00:00Z", status: "active" },
-      { amount: 0.065, submittedAt: "2026-01-05T00:00:00Z", status: "active" },
-    ]},
-    "c-henry-sil-gs": { baseFee: [
-      { amount: 2200, submittedAt: "2025-12-01T00:00:00Z", status: "active" },
-      { amount: 2400, submittedAt: "2026-01-10T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.07, submittedAt: "2025-12-01T00:00:00Z", status: "active" },
-      { amount: 0.075, submittedAt: "2026-01-10T00:00:00Z", status: "active" },
-    ]},
-    "w-sika-fs": { baseFee: [
-      { amount: 4500, submittedAt: "2025-09-15T00:00:00Z", status: "active" },
-      { amount: 5000, submittedAt: "2025-11-10T00:00:00Z", status: "active" },
-      { amount: 4800, submittedAt: "2026-02-01T00:00:00Z", status: "active" },
-    ], psfFee: [
-      { amount: 0.14, submittedAt: "2025-09-15T00:00:00Z", status: "active" },
-      { amount: 0.15, submittedAt: "2025-11-10T00:00:00Z", status: "active" },
-      { amount: 0.145, submittedAt: "2026-02-01T00:00:00Z", status: "active" },
-    ]},
-  };
-  return seed;
-};
+// (Pricing data is now fetched from the API)
 
 const getMedian = (arr) => {
   if (!arr || arr.length === 0) return null;
@@ -360,107 +173,26 @@ const getPricingSummary = (pricingStore, warrantyId) => {
     sufficient: count >= 3,
   };
 };
-const submitPricing = (pricingStore, setPricingStore, warrantyId, baseFee, psfFee) => {
+const doSubmitPricing = async (pricingStore, setPricingStore, warrantyId, baseFee, psfFee) => {
   const now = new Date().toISOString();
+  // Optimistic local update
   const newStore = { ...pricingStore };
   if (!newStore[warrantyId]) newStore[warrantyId] = { baseFee: [], psfFee: [] };
-  const entry = newStore[warrantyId];
-  const activeBase = entry.baseFee.filter(s => s.status === "active");
-  const activePsf = entry.psfFee.filter(s => s.status === "active");
-  let baseStatus = "active";
-  let psfStatus = "active";
-  if (activeBase.length >= 3) {
-    const med = getMedian(activeBase.map(s => s.amount));
-    if (Math.abs(baseFee - med) / med > 0.45) baseStatus = "pending";
-  }
-  if (activePsf.length >= 3) {
-    const med = getMedian(activePsf.map(s => s.amount));
-    if (Math.abs(psfFee - med) / med > 0.45) psfStatus = "pending";
-  }
-  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-  entry.baseFee.forEach(s => {
-    if (s.status === "pending" && s.submittedAt > sixtyDaysAgo) {
-      if (baseStatus === "active" && Math.abs(s.amount - baseFee) / Math.max(s.amount, baseFee) < 0.25) {
-        s.status = "active";
-      }
-    }
-  });
-  entry.psfFee.forEach(s => {
-    if (s.status === "pending" && s.submittedAt > sixtyDaysAgo) {
-      if (psfStatus === "active" && Math.abs(s.amount - psfFee) / Math.max(s.amount, psfFee) < 0.25) {
-        s.status = "active";
-      }
-    }
-  });
-  entry.baseFee = entry.baseFee.filter(s => s.status === "active" || s.submittedAt > sixtyDaysAgo);
-  entry.psfFee = entry.psfFee.filter(s => s.status === "active" || s.submittedAt > sixtyDaysAgo);
-  entry.baseFee.push({ amount: baseFee, submittedAt: now, status: baseStatus });
-  entry.psfFee.push({ amount: psfFee, submittedAt: now, status: psfStatus });
+  if (baseFee > 0) newStore[warrantyId].baseFee.push({ amount: baseFee, submittedAt: now, status: "active" });
+  if (psfFee > 0) newStore[warrantyId].psfFee.push({ amount: psfFee, submittedAt: now, status: "active" });
   setPricingStore(newStore);
-    // --- Sync to Google Sheet ---
-    const warranty = WARRANTY_DB.find(w => w.id === warrantyId);
-    if (warranty) {
-      submitPricingToSheet({
-        manufacturer: warranty.manufacturer,
-        product: warranty.name,
-        warrantyTerm: warranty.term,
-        regionState: "",
-        sqFtCost: psfFee,
-        totalProjectCost: baseFee,
-        projectSizeSqft: "",
-        submittedBy: "App User",
-        notes: "Submitted via Warranty Analyzer"
-      }).catch(err => console.warn("[SheetsSync] Could not sync to sheet:", err));
-    }
-  return baseStatus === "active" && psfStatus === "active" ? "accepted" : "flagged";
+  // Persist to API
+  submitPricingApi({ warrantyId, baseFee, psfFee }).catch(err => console.warn("[API] Pricing submit error:", err));
 };
 
-// ── WARRANTY OPTIONS DATABASE ──────────────────────────────────────
-const WARRANTY_DB = [
-  { id: "w-gaf-ndl", category: "Single-Ply", manufacturer: "GAF", name: "NDL (No Dollar Limit)", membranes: ["TPO", "PVC"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "None", inspFreq: "Biannual", inspBy: "GAF-certified contractor", transferable: true, pondingExcluded: true, windLimit: "74 mph", strengths: ["No dollar cap on repairs", "Longest coverage in TPO market", "Transferable to new owner"], weaknesses: ["Strict biannual inspection requirement", "Must use GAF-certified contractors", "Ponding water excluded"], bestFor: "Long-term hold properties needing maximum coverage", rating: 9 },
-  { id: "w-gaf-sl", category: "Single-Ply", manufacturer: "GAF", name: "Silver Pledge", membranes: ["TPO", "PVC"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "$50/sqft", inspFreq: "Biannual", inspBy: "GAF-certified contractor", transferable: true, pondingExcluded: true, windLimit: "74 mph", strengths: ["Solid mid-tier coverage", "Labor included", "Transferable"], weaknesses: ["Dollar cap limits exposure", "Same inspection requirements as NDL"], bestFor: "Budget-conscious owners wanting labor coverage", rating: 7 },
-  { id: "w-carlisle-mo", category: "Single-Ply", manufacturer: "Carlisle", name: "Material Only", membranes: ["TPO", "EPDM", "PVC"], term: 15, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Material value only", inspFreq: "Annual", inspBy: "Any licensed contractor", transferable: false, pondingExcluded: true, windLimit: "55 mph", strengths: ["Lower cost warranty", "Flexible inspection requirements", "Wide membrane compatibility"], weaknesses: ["No labor coverage at all", "Not transferable", "Lower wind threshold"], bestFor: "Cost-sensitive projects with reliable contractors", rating: 5 },
-  { id: "w-carlisle-psa", category: "Single-Ply", manufacturer: "Carlisle", name: "Platinum Shield", membranes: ["TPO", "EPDM", "PVC"], term: 20, laborCovered: true, materialCovered: true, consequential: true, dollarCap: "None", inspFreq: "Annual", inspBy: "Carlisle-authorized", transferable: true, pondingExcluded: false, windLimit: "80 mph", strengths: ["Covers consequential damages", "Ponding NOT excluded", "Higher wind threshold", "Transferable"], weaknesses: ["Premium pricing", "Must use Carlisle-authorized contractors only"], bestFor: "High-value properties where leak consequences are severe", rating: 9 },
-  { id: "w-versico-ml", category: "Single-Ply", manufacturer: "Versico", name: "Material + Labor", membranes: ["TPO", "EPDM"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "$40/sqft", inspFreq: "Biannual", inspBy: "Versico-authorized", transferable: true, pondingExcluded: true, windLimit: "60 mph", strengths: ["Good mid-range coverage", "Labor included", "Reasonable dollar cap"], weaknesses: ["Lower wind rating", "Biannual inspections required"], bestFor: "Mid-market properties with standard exposure", rating: 6 },
-  { id: "w-sika-fs", category: "Single-Ply", manufacturer: "Sika Sarnafil", name: "Full System", membranes: ["PVC"], term: 20, laborCovered: true, materialCovered: true, consequential: true, dollarCap: "Up to $500K", inspFreq: "Annual", inspBy: "Manufacturer direct", transferable: true, pondingExcluded: false, windLimit: "90 mph", strengths: ["Consequential damage coverage up to $500K", "Manufacturer-direct inspections", "Highest wind rating", "Ponding not excluded"], weaknesses: ["PVC only", "Premium cost", "Manufacturer controls inspections"], bestFor: "Healthcare, data centers, critical facilities", rating: 10 },
-  { id: "w-firestone-mo", category: "Single-Ply", manufacturer: "Firestone", name: "Material Only", membranes: ["TPO", "EPDM", "Modified Bitumen"], term: 15, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Material value", inspFreq: "Annual", inspBy: "Any licensed", transferable: false, pondingExcluded: true, windLimit: "55 mph", strengths: ["Wide membrane compatibility", "Flexible contractor requirements"], weaknesses: ["No labor", "Not transferable", "Material-only limits real protection"], bestFor: "Basic coverage on budget retrofits", rating: 4 },
-  { id: "c-gaco-sil-lm", category: "Coating", manufacturer: "GACO (Amrize)", name: "Silicone L&M NDL", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL on leak repairs", inspFreq: "Annual", inspBy: "Licensed GACO Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["NDL on leak repairs", "Ponding water NOT excluded (silicone)", "Up to 20-year terms available", "50-yr material-only option unique in industry"], weaknesses: ["Transfer fee + 60-day notice required", "30-day leak notification window", "Disputes governed by TN law"], bestFor: "Ponding-prone roofs needing long-term NDL coating warranty", rating: 9 },
-  { id: "c-gaco-sil-mo", category: "Coating", manufacturer: "GACO (Amrize)", name: "Silicone Material Only 50-yr", membranes: ["Silicone"], term: 50, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Replacement product", inspFreq: "Annual", inspBy: "N/A", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["50-year term unique in coating industry", "Ponding NOT excluded", "Low-cost warranty option"], weaknesses: ["No labor coverage", "Material replacement only"], bestFor: "Budget projects wanting longest material guarantee available", rating: 6 },
-  { id: "c-gaco-acr-lm", category: "Coating", manufacturer: "GACO (Amrize)", name: "Acrylic L&M NDL", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL on leak repairs", inspFreq: "Annual", inspBy: "Licensed GACO Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["NDL on leak repairs", "Up to 20-year terms", "Transferable"], weaknesses: ["Ponding water excluded", "Must use GACO licensed applicator"], bestFor: "Well-drained roofs needing acrylic restoration with NDL coverage", rating: 7 },
-  { id: "c-gaco-ure-lm", category: "Coating", manufacturer: "GACO (Amrize)", name: "Urethane L&M NDL", membranes: ["Urethane"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL on leak repairs", inspFreq: "Annual", inspBy: "Licensed GACO Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["NDL on leak repairs", "Urethane durability + impact resistance", "Up to 20-year terms"], weaknesses: ["Ponding water excluded", "Must use GACO licensed applicator"], bestFor: "High-traffic roofs needing durable urethane system with NDL", rating: 7 },
-  { id: "c-aws-sil-ndl", category: "Coating", manufacturer: "American WeatherStar", name: "Silicone NDL System", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL", inspFreq: "Annual (contractor-performed for 20-yr)", inspBy: "Platinum/Platinum Elite Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["NDL coverage", "Ponding NOT excluded", "Renewable within 30 days of expiration", "StarGard+ extension available"], weaknesses: ["Third-party inspection required", "Must use Platinum-tier contractor", "Transfer requires inspection + approval"], bestFor: "Premium silicone restoration with renewable NDL coverage", rating: 9 },
-  { id: "c-aws-uas-ndl", category: "Coating", manufacturer: "American WeatherStar", name: "Ure-A-Sil NDL System", membranes: ["Urethane", "Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL", inspFreq: "Annual", inspBy: "Platinum/Platinum Elite Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Flagship system combining urethane strength + silicone UV resistance", "NDL coverage", "Ponding NOT excluded (silicone topcoat)"], weaknesses: ["Premium contractor tier required", "Multi-coat application"], bestFor: "Maximum durability with urethane base and silicone topcoat", rating: 9 },
-  { id: "c-aws-acr-ndl", category: "Coating", manufacturer: "American WeatherStar", name: "Met-A-Gard Acrylic NDL", membranes: ["Acrylic"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "NDL", inspFreq: "Annual", inspBy: "Platinum Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Metal roof specific system", "NDL coverage", "Transferable"], weaknesses: ["Ponding water excluded", "Metal roofs only", "Max 15-year term"], bestFor: "Metal roof restoration with acrylic coating", rating: 7 },
-  { id: "c-sw-sil-lm", category: "Coating", manufacturer: "Sherwin-Williams (UNIFLEX)", name: "UNIGUARD Silicone System", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "UNIFLEX Authorized Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Backed by multi-billion dollar Sherwin-Williams", "4,600+ locations nationwide", "Ponding NOT excluded", "Up to 20-year terms"], weaknesses: ["Must use UNIFLEX Authorized Contractor", "Dollar cap not published as NDL"], bestFor: "Owners wanting blue-chip corporate backing on coating warranty", rating: 8 },
-  { id: "c-sw-acr-lm", category: "Coating", manufacturer: "Sherwin-Williams (UNIFLEX)", name: "UNIGUARD Acrylic System", membranes: ["Acrylic"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "UNIFLEX Authorized Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Sherwin-Williams corporate backing", "Can extend warranty with additional applications", "Transferable"], weaknesses: ["Ponding water excluded", "Max 15-year term for acrylic"], bestFor: "Well-drained roofs with corporate-grade warranty backing", rating: 7 },
-  { id: "c-sw-ure-lm", category: "Coating", manufacturer: "Sherwin-Williams (UNIFLEX)", name: "UNIGUARD Urethane System", membranes: ["Urethane"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "UNIFLEX Authorized Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Single-component aliphatic moisture curing", "Sherwin-Williams backing", "Transferable"], weaknesses: ["Ponding water excluded", "Max 15-year term"], bestFor: "Urethane restoration backed by major manufacturer", rating: 7 },
-  { id: "c-gaf-sil-lm", category: "Coating", manufacturer: "GAF", name: "Silicone Coating L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "GAF Certified Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Standard Industries backing", "Ponding NOT excluded", "Up to 20-year terms", "High Solid option allows single-coat application"], weaknesses: ["Must use GAF Certified Contractor", "Standard Unisil requires min 2 coats"], bestFor: "Silicone restoration through established GAF contractor network", rating: 8 },
-  { id: "c-gaf-acr-lm", category: "Coating", manufacturer: "GAF", name: "HydroStop Acrylic L&M", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "GAF Certified Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Premium HydroStop system up to 20 years", "GAF/Standard Industries backing", "Transferable"], weaknesses: ["Ponding water excluded", "Standard acrylic limited to 10/15-yr"], bestFor: "Premium acrylic restoration through GAF network", rating: 8 },
-  { id: "c-trop-sil-lm", category: "Coating", manufacturer: "Tropical (SOPREMA)", name: "Eterna-Sil Silicone System", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual (Care & Maintenance Specs)", inspBy: "Tropical Authorized Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["SOPREMA Group backing (integrated Jan 2026)", "Can be applied over ponding water", "100% silicone solvent-free", "Title 24 compliant, CRRC rated"], weaknesses: ["Separate warranty application per building", "Must use Tropical Authorized Contractor"], bestFor: "Silicone restoration backed by global SOPREMA group", rating: 8 },
-  { id: "c-trop-acr-lm", category: "Coating", manufacturer: "Tropical (SOPREMA)", name: "Acrylic System", membranes: ["Acrylic"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Tropical Authorized Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["SOPREMA Group backing", "Transferable"], weaknesses: ["Ponding water excluded", "Max 15-year term", "Separate warranty per building"], bestFor: "Acrylic restoration with international manufacturer support", rating: 7 },
-  { id: "c-henry-sil-gs", category: "Coating", manufacturer: "Carlisle (Henry)", name: "Pro-Grade 988 Gold Seal", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Henry Authorized Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["DPUR patent for dirt resistance", "Rain-safe in 15 min", "50+ mils single coat capability", "Carlisle Companies backing", "Warranty portal available"], weaknesses: ["Must use Henry Authorized Applicator"], bestFor: "Premium silicone with patented dirt-resistance technology", rating: 9 },
-  { id: "c-henry-sil-mp", category: "Coating", manufacturer: "Carlisle (Henry)", name: "Pro-Grade 988 Materials-Plus", membranes: ["Silicone"], term: 15, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Materials + labor for affected areas", inspFreq: "Annual", inspBy: "Henry Authorized Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Covers materials and labor for affected areas", "Ponding NOT excluded", "Lower cost than Gold Seal"], weaknesses: ["Not full NDL", "Coverage limited to affected areas"], bestFor: "Mid-tier silicone warranty with Henry's DPUR technology", rating: 7 },
-  { id: "c-henry-acr-gs", category: "Coating", manufacturer: "Carlisle (Henry)", name: "Pro-Grade 280 Acrylic Gold Seal", membranes: ["Acrylic"], term: 12, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Henry Authorized Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Carlisle Companies backing", "Resists chalking, mildew, fungi", "Warranty portal"], weaknesses: ["Ponding water excluded", "Max 12-year term shorter than competitors"], bestFor: "Acrylic restoration with Carlisle backing where drainage is adequate", rating: 6 },
-  { id: "c-apoc-sil-mo", category: "Coating", manufacturer: "APOC", name: "576 Premium Silicone Lifetime", membranes: ["Silicone"], term: 99, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Replacement product (prorated)", inspFreq: "N/A", inspBy: "N/A", transferable: false, pondingExcluded: false, windLimit: "Per terms", strengths: ["Lifetime material warranty unique in market", "Rain-safe in 15 min", "Exceeds ASTM D6694/D7281", "Title 24 and CRRC certified"], weaknesses: ["Material only, no labor", "Prorated replacement", "Not transferable"], bestFor: "Budget projects wanting longest material-only silicone guarantee", rating: 5 },
-  { id: "c-apoc-acr-258", category: "Coating", manufacturer: "APOC", name: "258 Energy-Armor Ultra 20-yr", membranes: ["Acrylic"], term: 20, laborCovered: false, materialCovered: true, consequential: false, dollarCap: "Replacement product (prorated)", inspFreq: "N/A", inspBy: "N/A", transferable: false, pondingExcluded: true, windLimit: "Per terms", strengths: ["20-year material warranty on acrylic", "Premium formulation"], weaknesses: ["Material only", "Ponding excluded", "Prorated", "Not transferable"], bestFor: "Budget acrylic projects needing extended material coverage", rating: 4 },
-  { id: "c-apoc-sys-lm", category: "Coating", manufacturer: "APOC", name: "System L&M Warranty", membranes: ["Silicone", "Acrylic", "Urethane"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "APOC Certified Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Full L&M system warranty available", "Founded 1913, #1 US asphalt/acrylic producer", "Multi-chemistry options"], weaknesses: ["30-day written notice for claims", "Must use APOC Certified Applicator"], bestFor: "Full system coating warranty from established manufacturer", rating: 7 },
-  { id: "c-karnak-sil-lm", category: "Coating", manufacturer: "KARNAK", name: "Karna-Sil Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Q Applicator Program", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Ponding NOT excluded", "NSF rated for potable rainwater", "Woman-owned certified", "SRI 110 initial / 86 aged"], weaknesses: ["Pre-approval required", "Inspection after payment", "5-10 day processing", "Smaller manufacturer footprint"], bestFor: "Sustainability-focused projects or potable rainwater applications", rating: 7 },
-  { id: "c-karnak-acr-lm", category: "Coating", manufacturer: "KARNAK", name: "Acrylic/Silicone L&M", membranes: ["Acrylic", "Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Q Applicator Program", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Separate forms for metal vs non-metal substrates", "Up to 20-year terms", "NSF rated"], weaknesses: ["Smaller manufacturer", "Pre-approval process required"], bestFor: "Metal or non-metal substrates needing specialty coating warranty", rating: 6 },
-  { id: "c-poly-sil-lm", category: "Coating", manufacturer: "Polyglass (MAPEI)", name: "Polybrite Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Min 2x/yr per NRCA/RCMA", inspBy: "Polyglass Registered Contractor", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["MAPEI Group backing", "Ponding NOT excluded for Polybrite", "Up to 20-year terms", "Open Year option available"], weaknesses: ["$500 transfer fee + costs", "30-day advance notice for transfers", "Semi-annual inspections required", "Excludes consequential damages and attorney fees"], bestFor: "Silicone restoration backed by global MAPEI group", rating: 8 },
-  { id: "c-poly-acr-lm", category: "Coating", manufacturer: "Polyglass (MAPEI)", name: "Acrylic Fast-Dry L&M", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Min 2x/yr", inspBy: "Polyglass Registered Contractor", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["MAPEI Group backing", "Fast-dry formulations", "Up to 20-year terms"], weaknesses: ["Ponding/lack of drainage excluded", "$500 transfer fee", "Semi-annual inspections"], bestFor: "Acrylic restoration with international manufacturer backing", rating: 7 },
-  { id: "c-everest-sil-lm", category: "Coating", manufacturer: "Everest Systems", name: "Silkoxy Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Everest Certified Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Alkoxy high-solids, no primer needed in most apps", "Ponding NOT excluded", "Houston TX manufacturing", "Up to 20-year terms"], weaknesses: ["Smaller manufacturer", "Must use Everest Certified Applicator"], bestFor: "Primer-free silicone application with full L&M warranty", rating: 8 },
-  { id: "c-everest-acr-lm", category: "Coating", manufacturer: "Everest Systems", name: "EverCoat Acrylic L&M", membranes: ["Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Everest Certified Applicator", transferable: true, pondingExcluded: true, windLimit: "Per terms", strengths: ["Plasticizer-free formulation", "High-tensile option (EverCoat HT)", "Fluorostar PVDF topcoat for 10-yr color-fast", "Up to 20-year terms"], weaknesses: ["Ponding water excluded", "Smaller manufacturer footprint"], bestFor: "Premium acrylic with color-fast PVDF topcoat option", rating: 7 },
-  { id: "c-everest-ure-lm", category: "Coating", manufacturer: "Everest Systems", name: "EverMax/EverSol Urethane L&M", membranes: ["Urethane"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "Everest Certified Applicator", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["EverMax FR for fire-resistant polyurea", "Eco-Level self-leveling for ponding areas", "Extreme weather protection", "Up to 20-year terms"], weaknesses: ["Specialty application required", "Must use Everest Certified Applicator"], bestFor: "Extreme weather or fire-resistant coating applications", rating: 8 },
-  { id: "c-far-sil-lm", category: "Coating", manufacturer: "FAR (Fluid Applied Roofing)", name: "ProSil Silicone L&M", membranes: ["Silicone"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "FAR Certified Contractor/Inspector", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["Ponding NOT excluded", "Up to 20-year terms", "FAR Certified Inspector program", "Alkoxy and high-solids options"], weaknesses: ["Newer manufacturer", "Must use FAR Certified Contractor"], bestFor: "Silicone restoration with dedicated inspector certification program", rating: 7 },
-  { id: "c-far-hybrid-lm", category: "Coating", manufacturer: "FAR (Fluid Applied Roofing)", name: "FiberSeal PU-Acrylic Hybrid L&M", membranes: ["Urethane", "Acrylic"], term: 20, laborCovered: true, materialCovered: true, consequential: false, dollarCap: "Per warranty terms", inspFreq: "Annual", inspBy: "FAR Certified Contractor/Inspector", transferable: true, pondingExcluded: false, windLimit: "Per terms", strengths: ["IRE People's Choice Award 2025 & 2026", "PU-Acrylic hybrid resists ponding", "Up to 20-year terms"], weaknesses: ["Newer manufacturer", "Hybrid chemistry less established"], bestFor: "Innovative hybrid coating for ponding-prone roofs", rating: 7 },
-];
+// (WARRANTY_DB is now fetched from the API)
 
 const Stars = ({ n, max = 10 }) => {
   const filled = Math.round(n / 2);
   return <span style={{ display: "inline-flex", gap: 2 }}>{[...Array(5)].map((_, i) => <span key={i} style={{ color: i < filled ? C.yellow : C.g200 }}>{i < filled ? Ic.star : Ic.starEmpty}</span>)}</span>;
 };
 // WarrantyAnalyzer – full 3-path wizard
-function WarrantyAnalyzer({ open, onClose }) {
+function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
   const [path, setPath] = useState(null);
   const [step, setStep] = useState(0);
   const [propName, setPropName] = useState("");
@@ -796,11 +528,12 @@ function WarrantyAnalyzer({ open, onClose }) {
   return null;
 }
 
-function Accounts({ onSelectRoof }) {
+function Accounts({ onSelectRoof, OWNERS }) {
   const [q, setQ] = useState("");
   const [exp, setExp] = useState({});
   const toggle = (id) => setExp(p => ({ ...p, [id]: !p[id] }));
-  const fil = q ? OWNERS.filter(o => o.name.toLowerCase().includes(q.toLowerCase()) || o.properties.some(p => p.name.toLowerCase().includes(q.toLowerCase()))) : OWNERS;
+  const owners = OWNERS || [];
+  const fil = q ? owners.filter(o => o.name.toLowerCase().includes(q.toLowerCase()) || o.properties.some(p => p.name.toLowerCase().includes(q.toLowerCase()))) : owners;
   const compDot = (c) => {
     const col = c === "current" ? C.green : c === "at-risk" ? C.yellow : C.red;
     return <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, display: "inline-block" }} />;
@@ -812,9 +545,9 @@ function Accounts({ onSelectRoof }) {
       <Btn primary>{Ic.plus} Add Owner</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-      <KPI label="Owners" value={OWNERS.length} icon={Ic.user} />
-      <KPI label="Properties" value={OWNERS.reduce((s,o)=>s+o.properties.length,0)} icon={Ic.building} color={C.navy} />
-      <KPI label="Roof Sections" value={OWNERS.reduce((s,o)=>s+o.properties.reduce((s2,p)=>s2+p.roofs.length,0),0)} icon={Ic.shield} />
+      <KPI label="Owners" value={owners.length} icon={Ic.user} />
+      <KPI label="Properties" value={owners.reduce((s,o)=>s+o.properties.length,0)} icon={Ic.building} color={C.navy} />
+      <KPI label="Roof Sections" value={owners.reduce((s,o)=>s+o.properties.reduce((s2,p)=>s2+p.roofs.length,0),0)} icon={Ic.shield} />
     </div>
     <div style={{ position: "relative", marginBottom: 20 }}>
       <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.g400 }}>{Ic.search}</span>
@@ -842,24 +575,10 @@ function Accounts({ onSelectRoof }) {
   </div>;
 }
 
-function Warranties({ selectedRoof, setSelectedRoof }) {
-  const [pricingStore, setPricingStore] = useState({});
-  const [pricingLoading, setPricingLoading] = useState(false);
-
-  // Fetch pricing data from Google Sheets on mount
-  useEffect(() => {
-    setPricingLoading(true);
-    fetchPricingStore().then(data => {
-      if (data && Object.keys(data).length > 0) {
-        setPricingStore(data);
-      }
-      setPricingLoading(false);
-    }).catch(() => setPricingLoading(false));
-  }, []);
-
-  const roofs = allRoofs();
+function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPricingStore, pricingLoading }) {
+  const roofs = allRoofs(OWNERS);
   if (selectedRoof) {
-    const r = findRoof(selectedRoof);
+    const r = findRoof(OWNERS, selectedRoof);
     if (!r) return null;
     const w = r.warranty;
     const p = pctUsed(w.start, w.end);
@@ -923,7 +642,7 @@ function Warranties({ selectedRoof, setSelectedRoof }) {
                     const baseFee = parseFloat(baseEl?.value) || 0;
                     const psFee = parseFloat(psfEl?.value) || 0;
                     if (baseFee > 0 || psFee > 0) {
-                      submitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
+                      doSubmitPricing(pricingStore, setPricingStore, w.id, baseFee, psFee);
                       if (baseEl) baseEl.value = "";
                       if (psfEl) psfEl.value = "";
                     }
@@ -959,14 +678,14 @@ function Warranties({ selectedRoof, setSelectedRoof }) {
   </div>;
 }
 
-function AccessLog() {
+function AccessLog({ ACCESS_LOGS, OWNERS }) {
   return <div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Roof Access Log</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>QR-based tracking of everyone who goes on the roof</p></div>
       <Btn primary>{Ic.qr} Generate QR Code</Btn>
     </div>
-    {ACCESS_LOGS.map(log => { const r=findRoof(log.roofId); const isU=log.person==="Unknown"; return <Card key={log.id} style={{ marginBottom: 10, borderLeft: isU ? `4px solid ${C.red}` : `4px solid ${C.g200}` }}>
+    {(ACCESS_LOGS || []).map(log => { const r=findRoof(OWNERS, log.roofId); const isU=log.person==="Unknown"; return <Card key={log.id} style={{ marginBottom: 10, borderLeft: isU ? `4px solid ${C.red}` : `4px solid ${C.g200}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><span style={{ fontSize: 14, fontWeight: 700, color: isU ? C.red : C.navy, fontFamily: F.head }}>{log.person}</span>
         {isU && <Badge status="overdue" label="Unauthorized" />}
@@ -979,8 +698,9 @@ function AccessLog() {
   </div>;
 }
 
-function InvoicesTab() {
-  const flagged = INVOICES.filter(i => i.flagged);
+function InvoicesTab({ INVOICES, OWNERS }) {
+  const invoices = INVOICES || [];
+  const flagged = invoices.filter(i => i.flagged);
   const potentialRecovery = flagged.reduce((s, i) => s + i.amount, 0);
   return <div>
     <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Invoice Tracker</h2>
@@ -991,11 +711,11 @@ function InvoicesTab() {
       <div style={{ fontSize: 12, color: "#b45309" }}>{flagged.length} invoices flagged for review</div></div>
     </div>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-      <KPI label="Total Invoices" value={INVOICES.length} icon={Ic.file} />
+      <KPI label="Total Invoices" value={invoices.length} icon={Ic.file} />
       <KPI label="Flagged" value={flagged.length} icon={Ic.flag} color={C.yellow} />
       <KPI label="Potential Recovery" value={fmtMoney(potentialRecovery)} icon={Ic.dollar} color={C.green} />
     </div>
-    {INVOICES.map(inv => { const r=findRoof(inv.roofId); return <Card key={inv.id} style={{ marginBottom: 10, borderLeft: inv.flagged ? `4px solid ${C.yellow}` : `4px solid ${C.g200}` }}>
+    {invoices.map(inv => { const r=findRoof(OWNERS, inv.roofId); return <Card key={inv.id} style={{ marginBottom: 10, borderLeft: inv.flagged ? `4px solid ${C.yellow}` : `4px solid ${C.g200}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{inv.vendor}</div>
         <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{inv.desc}</div></div>
@@ -1009,9 +729,10 @@ function InvoicesTab() {
   </div>;
 }
 
-function InspectionsTab() {
-  const upcoming = INSPECTIONS.filter(i => i.status === "scheduled" || i.status === "overdue");
-  const completed = INSPECTIONS.filter(i => i.status === "completed");
+function InspectionsTab({ INSPECTIONS, OWNERS }) {
+  const inspections = INSPECTIONS || [];
+  const upcoming = inspections.filter(i => i.status === "scheduled" || i.status === "overdue");
+  const completed = inspections.filter(i => i.status === "completed");
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Inspection Manager</h2>
@@ -1020,10 +741,10 @@ function InspectionsTab() {
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Upcoming" value={upcoming.length} icon={Ic.cal} color={C.blue} />
-      <KPI label="Overdue" value={INSPECTIONS.filter(i=>i.status==="overdue").length} icon={Ic.alert} color={C.red} />
+      <KPI label="Overdue" value={inspections.filter(i=>i.status==="overdue").length} icon={Ic.alert} color={C.red} />
       <KPI label="Completed" value={completed.length} icon={Ic.check} />
     </div>
-    {upcoming.map(insp => { const r=findRoof(insp.roofId); const days=daysTo(insp.date); return <Card key={insp.id} style={{ marginBottom: 10, borderLeft: insp.status==="overdue" ? `4px solid ${C.red}` : `4px solid ${C.blue}` }}>
+    {upcoming.map(insp => { const r=findRoof(OWNERS, insp.roofId); const days=daysTo(insp.date); return <Card key={insp.id} style={{ marginBottom: 10, borderLeft: insp.status==="overdue" ? `4px solid ${C.red}` : `4px solid ${C.blue}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{insp.type}</div>
         {r && <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{r.section} · {r.propName}</div>}</div>
@@ -1031,7 +752,7 @@ function InspectionsTab() {
       </div>
       <div style={{ fontSize: 12, color: C.g600, marginTop: 8 }}>{insp.notes}</div>
     </Card>; })}
-    {completed.map(insp => { const r=findRoof(insp.roofId); return <Card key={insp.id} style={{ marginBottom: 10 }}>
+    {completed.map(insp => { const r=findRoof(OWNERS, insp.roofId); return <Card key={insp.id} style={{ marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div><div style={{ fontSize: 14, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{insp.type}</div>
         {r && <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{r.section} · {r.propName}</div>}
@@ -1048,8 +769,9 @@ function InspectionsTab() {
   </div>;
 }
 
-function ClaimsTab() {
-  const recovered = CLAIMS.filter(c=>c.status==="approved").reduce((s,c)=>s+c.amount,0);
+function ClaimsTab({ CLAIMS, OWNERS }) {
+  const claims = CLAIMS || [];
+  const recovered = claims.filter(c=>c.status==="approved").reduce((s,c)=>s+c.amount,0);
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Warranty Claims</h2>
@@ -1057,11 +779,11 @@ function ClaimsTab() {
       <Btn primary>{Ic.plus} File Claim</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-      <KPI label="Total Claims" value={CLAIMS.length} icon={Ic.file} />
-      <KPI label="In Progress" value={CLAIMS.filter(c=>c.status==="in-progress").length} icon={Ic.clock} color={C.blue} />
+      <KPI label="Total Claims" value={claims.length} icon={Ic.file} />
+      <KPI label="In Progress" value={claims.filter(c=>c.status==="in-progress").length} icon={Ic.clock} color={C.blue} />
       <KPI label="Recovered" value={fmtMoney(recovered)} icon={Ic.dollar} color={C.green} />
     </div>
-    {CLAIMS.map(claim => { const r=findRoof(claim.roofId); return <Card key={claim.id} style={{ marginBottom: 16 }}>
+    {claims.map(claim => { const r=findRoof(OWNERS, claim.roofId); return <Card key={claim.id} style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
         <div><div style={{ fontSize: 15, fontWeight: 700, color: C.navy, fontFamily: F.head }}>{claim.manufacturer} Claim</div>
         <div style={{ fontSize: 12, color: C.g400, marginTop: 2 }}>{claim.desc}</div>
@@ -1093,10 +815,55 @@ export default function App() {
   const [tab, setTab] = useState("accounts");
   const [selectedRoof, setSelectedRoof] = useState(null);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
+
+  // ── API State ──
+  const [owners, setOwners] = useState([]);
+  const [warrantyDb, setWarrantyDb] = useState([]);
+  const [pricingStore, setPricingStore] = useState({});
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [accessLogs, setAccessLogs] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [inspections, setInspections] = useState([]);
+  const [claims, setClaims] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetchAccounts().catch(() => []),
+      fetchWarrantyDb().catch(() => []),
+      fetchPricingStore().catch(() => ({})),
+      fetchAccessLogs().catch(() => []),
+      fetchInvoices().catch(() => []),
+      fetchInspections().catch(() => []),
+      fetchClaims().catch(() => []),
+    ]).then(([acc, wdb, pricing, logs, inv, insp, cl]) => {
+      setOwners(acc);
+      setWarrantyDb(wdb);
+      setPricingStore(pricing);
+      setAccessLogs(logs);
+      setInvoices(inv);
+      setInspections(insp);
+      setClaims(cl);
+      setLoading(false);
+    });
+  }, []);
+
   const onSelectRoof = (roofId) => { setSelectedRoof(roofId); setTab("warranties"); };
+
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: C.g50, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.body }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <span style={{ color: C.white, fontFamily: F.head, fontWeight: 800, fontSize: 18 }}>MRI</span>
+        </div>
+        <div style={{ fontSize: 14, color: C.g600, fontFamily: F.body }}>Loading Warranty Manager...</div>
+      </div>
+    </div>
+  );
+
   return <div style={{ minHeight: "100vh", background: C.g50, fontFamily: F.body }}>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} />
+    <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} WARRANTY_DB={warrantyDb} />
     <div style={{ background: C.navy, padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1111,12 +878,12 @@ export default function App() {
       {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px" }}>
-      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} />}
-      {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} />}
-      {tab === "access" && <AccessLog />}
-      {tab === "invoices" && <InvoicesTab />}
-      {tab === "inspections" && <InspectionsTab />}
-      {tab === "claims" && <ClaimsTab />}
+      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} />}
+      {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} />}
+      {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} />}
+      {tab === "invoices" && <InvoicesTab INVOICES={invoices} OWNERS={owners} />}
+      {tab === "inspections" && <InspectionsTab INSPECTIONS={inspections} OWNERS={owners} />}
+      {tab === "claims" && <ClaimsTab CLAIMS={claims} OWNERS={owners} />}
     </div>
     <button onClick={() => setAnalyzerOpen(true)} style={{ position: "fixed", bottom: 24, right: 24, display: "flex", alignItems: "center", gap: 8, padding: "14px 22px", borderRadius: 16, background: C.green, border: "none", color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", boxShadow: `0 4px 20px ${C.green}50`, zIndex: 100 }}>{Ic.zap} Warranty Analyzer</button>
   </div>;
