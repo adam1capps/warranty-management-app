@@ -17,7 +17,7 @@ async function request(path, options = {}) {
 /** Fetch full account hierarchy (owners → PMs, properties → roofs → warranties) */
 export const fetchAccounts = () => request("/accounts");
 
-/** Fetch the warranty options database (37 items) */
+/** Fetch the warranty options database (223 items) */
 export const fetchWarrantyDb = () => request("/warranties");
 
 /** Fetch pricing store (grouped by warranty ID) */
