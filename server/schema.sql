@@ -40,16 +40,19 @@ CREATE TABLE IF NOT EXISTS users (
 -- Owners
 CREATE TABLE IF NOT EXISTS owners (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   contact TEXT,
   email TEXT,
   phone TEXT,
-  notes TEXT
+  notes TEXT,
+  is_demo BOOLEAN DEFAULT false
 );
 
 -- Property Managers
 CREATE TABLE IF NOT EXISTS property_managers (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   contact TEXT,
@@ -61,6 +64,7 @@ CREATE TABLE IF NOT EXISTS property_managers (
 -- Properties
 CREATE TABLE IF NOT EXISTS properties (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   managed_by TEXT REFERENCES property_managers(id),
   name TEXT NOT NULL,
@@ -70,6 +74,7 @@ CREATE TABLE IF NOT EXISTS properties (
 -- Roofs
 CREATE TABLE IF NOT EXISTS roofs (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
   section TEXT NOT NULL,
   sq_ft INTEGER,
@@ -134,6 +139,7 @@ CREATE TABLE IF NOT EXISTS warranty_db (
 -- Pricing Submissions (replaces Google Sheets)
 CREATE TABLE IF NOT EXISTS pricing_submissions (
   id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   warranty_id TEXT REFERENCES warranty_db(id),
   fee_type TEXT NOT NULL CHECK (fee_type IN ('base', 'psf')),
   amount NUMERIC(12,4) NOT NULL,
@@ -141,13 +147,15 @@ CREATE TABLE IF NOT EXISTS pricing_submissions (
   submitted_at TIMESTAMPTZ DEFAULT NOW(),
   submitted_by TEXT DEFAULT 'App User',
   region_state TEXT,
-  notes TEXT
+  notes TEXT,
+  is_demo BOOLEAN DEFAULT false
 );
 
 -- Access Logs
 CREATE TABLE IF NOT EXISTS access_logs (
   id TEXT PRIMARY KEY,
-  roof_id TEXT REFERENCES roofs(id),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  roof_id TEXT REFERENCES roofs(id) ON DELETE CASCADE,
   person TEXT,
   company TEXT,
   purpose TEXT,
@@ -159,7 +167,8 @@ CREATE TABLE IF NOT EXISTS access_logs (
 -- Invoices
 CREATE TABLE IF NOT EXISTS invoices (
   id TEXT PRIMARY KEY,
-  roof_id TEXT REFERENCES roofs(id),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  roof_id TEXT REFERENCES roofs(id) ON DELETE CASCADE,
   vendor TEXT,
   date DATE,
   amount NUMERIC(12,2) DEFAULT 0,
@@ -172,7 +181,8 @@ CREATE TABLE IF NOT EXISTS invoices (
 -- Inspections
 CREATE TABLE IF NOT EXISTS inspections (
   id TEXT PRIMARY KEY,
-  roof_id TEXT REFERENCES roofs(id),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  roof_id TEXT REFERENCES roofs(id) ON DELETE CASCADE,
   date DATE,
   inspector TEXT,
   company TEXT,
@@ -187,7 +197,8 @@ CREATE TABLE IF NOT EXISTS inspections (
 -- Claims
 CREATE TABLE IF NOT EXISTS claims (
   id TEXT PRIMARY KEY,
-  roof_id TEXT REFERENCES roofs(id),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  roof_id TEXT REFERENCES roofs(id) ON DELETE CASCADE,
   manufacturer TEXT,
   filed DATE,
   amount NUMERIC(12,2) DEFAULT 0,

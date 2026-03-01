@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import pool from "../db.js";
+import { seedDemoData, clearDemoData } from "../demoData.js";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "warranty-mgmt-dev-secret-change-in-prod";
@@ -78,6 +79,13 @@ router.post("/register", async (req, res) => {
 
     const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
     const token = generateToken(rows[0]);
+
+    // Seed demo/placeholder data for the new user
+    try {
+      await seedDemoData(userId, companyName);
+    } catch (seedErr) {
+      console.error("[AUTH] Failed to seed demo data:", seedErr);
+    }
 
     // In production, send verifyUrl via email (SendGrid, SES). Never expose it in the response.
     res.json({ success: true, token, user: mapUser(rows[0]) });
@@ -309,6 +317,13 @@ router.get("/google/callback", async (req, res) => {
       );
       const created = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
       user = created.rows[0];
+
+      // Seed demo data for new Google OAuth users
+      try {
+        await seedDemoData(userId, user.company_name);
+      } catch (seedErr) {
+        console.error("[AUTH] Failed to seed demo data for Google user:", seedErr);
+      }
     }
 
     const token = generateToken(user);
@@ -358,6 +373,13 @@ router.post("/sso", async (req, res) => {
       );
       const created = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
       user = created.rows[0];
+
+      // Seed demo data for new SSO users
+      try {
+        await seedDemoData(userId, user.company_name);
+      } catch (seedErr) {
+        console.error("[AUTH] Failed to seed demo data for SSO user:", seedErr);
+      }
     }
 
     const token = generateToken(user);
@@ -411,6 +433,43 @@ router.put("/profile", async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [decoded.id]);
     res.json({ success: true, user: mapUser(rows[0]) });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/auth/has-demo-data — check if user has demo data ──
+router.get("/has-demo-data", async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "No token provided" });
+
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+    const { rows } = await pool.query(
+      "SELECT COUNT(*) AS count FROM owners WHERE user_id = $1 AND is_demo = true",
+      [decoded.id]
+    );
+    res.json({ hasDemoData: parseInt(rows[0].count) > 0 });
+  } catch (err) {
+    if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/auth/demo-data — clear all placeholder data for the user ──
+router.delete("/demo-data", async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith("Bearer ")) return res.status(401).json({ error: "No token provided" });
+
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+    await clearDemoData(decoded.id);
+    res.json({ success: true, message: "All placeholder data has been cleared. You can now build your own client database." });
+  } catch (err) {
+    if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
     res.status(500).json({ error: err.message });
   }
 });

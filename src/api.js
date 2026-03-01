@@ -118,3 +118,10 @@ export const getMe = () => request("/auth/me");
 /** Update user profile */
 export const updateProfile = (data) =>
   request("/auth/profile", { method: "PUT", body: JSON.stringify(data) });
+
+/** Check if user has demo/placeholder data */
+export const checkDemoData = () => request("/auth/has-demo-data");
+
+/** Clear all demo/placeholder data */
+export const clearDemoData = () =>
+  request("/auth/demo-data", { method: "DELETE" });

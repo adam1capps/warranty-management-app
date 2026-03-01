@@ -1,4 +1,4 @@
-import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth } from "./api";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData } from "./api";
 import { useState, useEffect, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1972,6 +1972,8 @@ export default function App() {
   const [inspections, setInspections] = useState([]);
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hasDemoData, setHasDemoData] = useState(false);
+  const [clearingDemo, setClearingDemo] = useState(false);
 
   // Check for existing auth token on mount, or handle OAuth callback
   const [oauthError, setOauthError] = useState("");
@@ -2027,6 +2029,20 @@ export default function App() {
     setUser(null);
   };
 
+  const handleClearDemoData = async () => {
+    if (!window.confirm("Are you sure you want to clear all placeholder data? This cannot be undone. Your real data (if any) will not be affected.")) return;
+    setClearingDemo(true);
+    try {
+      await clearDemoData();
+      setHasDemoData(false);
+      await loadAll();
+    } catch (err) {
+      alert("Failed to clear demo data: " + err.message);
+    } finally {
+      setClearingDemo(false);
+    }
+  };
+
   const loadAll = useCallback(() => {
     return Promise.all([
       fetchAccounts().catch(() => []),
@@ -2036,7 +2052,8 @@ export default function App() {
       fetchInvoices().catch(() => []),
       fetchInspections().catch(() => []),
       fetchClaims().catch(() => []),
-    ]).then(([acc, wdb, pricing, logs, inv, insp, cl]) => {
+      checkDemoData().catch(() => ({ hasDemoData: false })),
+    ]).then(([acc, wdb, pricing, logs, inv, insp, cl, demo]) => {
       setOwners(acc);
       setWarrantyDb(wdb);
       setPricingStore(pricing);
@@ -2044,6 +2061,7 @@ export default function App() {
       setInvoices(inv);
       setInspections(insp);
       setClaims(cl);
+      setHasDemoData(demo.hasDemoData);
       setLoading(false);
     });
   }, []);
@@ -2117,6 +2135,14 @@ export default function App() {
     <div style={{ background: C.white, borderBottom: `1.5px solid ${C.g100}`, display: "flex", overflowX: "auto", padding: "0 32px" }}>
       {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
+    {hasDemoData && <div style={{ margin: "0 32px", marginTop: 16, padding: "12px 20px", borderRadius: 10, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+      <div style={{ fontSize: 13, color: "#92400E", fontFamily: F.body }}>
+        <strong>Placeholder data loaded.</strong> This sample data shows how the platform works. When you're ready to build your own client database, clear it out.
+      </div>
+      <button onClick={handleClearDemoData} disabled={clearingDemo} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#D97706", color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: F.head, cursor: clearingDemo ? "wait" : "pointer", whiteSpace: "nowrap", opacity: clearingDemo ? 0.6 : 1 }}>
+        {clearingDemo ? "Clearing..." : "Clear Placeholder Data"}
+      </button>
+    </div>}
     <div style={{ padding: "24px 32px" }}>
       {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} onAdd={() => setAddOwnerOpen(true)} />}
       {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} />}

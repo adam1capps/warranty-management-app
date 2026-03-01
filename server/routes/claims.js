@@ -4,10 +4,21 @@ import pool from "../db.js";
 const router = Router();
 
 // GET /api/claims — includes timeline events
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { rows: claims } = await pool.query("SELECT * FROM claims ORDER BY filed DESC");
-    const { rows: events } = await pool.query("SELECT * FROM claim_events ORDER BY claim_id, sort_order");
+    const userId = req.user.id;
+    const { rows: claims } = await pool.query("SELECT * FROM claims WHERE user_id = $1 ORDER BY filed DESC", [userId]);
+
+    // Only fetch events for this user's claims
+    const claimIds = claims.map(c => c.id);
+    let events = [];
+    if (claimIds.length > 0) {
+      const { rows } = await pool.query(
+        "SELECT * FROM claim_events WHERE claim_id = ANY($1) ORDER BY claim_id, sort_order",
+        [claimIds]
+      );
+      events = rows;
+    }
 
     const eventMap = {};
     for (const e of events) {
@@ -33,15 +44,20 @@ router.get("/", async (_req, res) => {
 // POST /api/claims — file a new warranty claim
 router.post("/", async (req, res) => {
   try {
+    const userId = req.user.id;
     const { roofId, manufacturer, amount, description } = req.body;
     if (!roofId || !manufacturer) return res.status(400).json({ error: "roofId and manufacturer are required" });
+
+    // Verify user owns this roof
+    const { rows: roofCheck } = await pool.query("SELECT id FROM roofs WHERE id = $1 AND user_id = $2", [roofId, userId]);
+    if (roofCheck.length === 0) return res.status(404).json({ error: "Roof not found" });
 
     const claimId = `claim-${Date.now()}`;
     const filed = new Date().toISOString().split("T")[0];
 
     await pool.query(
-      "INSERT INTO claims (id, roof_id, manufacturer, filed, amount, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-      [claimId, roofId, manufacturer, filed, amount || 0, "in-progress", description || null]
+      "INSERT INTO claims (id, user_id, roof_id, manufacturer, filed, amount, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [claimId, userId, roofId, manufacturer, filed, amount || 0, "in-progress", description || null]
     );
 
     // Create initial timeline event
@@ -59,9 +75,15 @@ router.post("/", async (req, res) => {
 // PUT /api/claims/:id/status — update claim status
 router.put("/:id/status", async (req, res) => {
   try {
+    const userId = req.user.id;
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: "status is required" });
-    await pool.query("UPDATE claims SET status = $1 WHERE id = $2", [status, req.params.id]);
+
+    // Verify user owns this claim
+    const { rows: claimCheck } = await pool.query("SELECT id FROM claims WHERE id = $1 AND user_id = $2", [req.params.id, userId]);
+    if (claimCheck.length === 0) return res.status(404).json({ error: "Claim not found" });
+
+    await pool.query("UPDATE claims SET status = $1 WHERE id = $2 AND user_id = $3", [status, req.params.id, userId]);
 
     // Add timeline event
     const date = new Date().toISOString().split("T")[0];
