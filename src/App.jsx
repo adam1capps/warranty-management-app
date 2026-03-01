@@ -1040,9 +1040,12 @@ function AuthScreen({ onAuth }) {
   };
 
   const handleSSO = async (provider) => {
-    // In production, this would redirect to OAuth flow
-    // For now, show a message about configuration
-    setError(`${provider} SSO requires OAuth client credentials to be configured. Use email signup for now.`);
+    const apiUrl = import.meta.env.VITE_API_URL || "/api";
+    if (provider === "google") {
+      window.location.href = `${apiUrl}/auth/google`;
+    } else {
+      setError(`${provider} SSO is not yet configured. Use Google or email signup for now.`);
+    }
   };
 
   const handleSendCode = async () => {
@@ -1970,14 +1973,29 @@ export default function App() {
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Check for existing auth token on mount
+  // Check for existing auth token on mount, or handle OAuth callback
   useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    if (token) {
+    const params = new URLSearchParams(window.location.search);
+    const oauthToken = params.get("auth_token");
+    const oauthError = params.get("auth_error");
+
+    // Clean up URL params from OAuth redirect
+    if (oauthToken || oauthError) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    if (oauthToken) {
+      localStorage.setItem("auth_token", oauthToken);
       getMe().then(res => { setUser(res.user); setAuthChecked(true); })
         .catch(() => { localStorage.removeItem("auth_token"); setAuthChecked(true); });
     } else {
-      setAuthChecked(true);
+      const token = localStorage.getItem("auth_token");
+      if (token) {
+        getMe().then(res => { setUser(res.user); setAuthChecked(true); })
+          .catch(() => { localStorage.removeItem("auth_token"); setAuthChecked(true); });
+      } else {
+        setAuthChecked(true);
+      }
     }
   }, []);
 

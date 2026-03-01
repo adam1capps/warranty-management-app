@@ -8,6 +8,13 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "warranty-mgmt-dev-secret-change-in-prod";
 const TOKEN_EXPIRY = "7d";
 
+// Google OAuth config
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const APP_URL = process.env.APP_URL || "http://localhost:5173";
+const API_URL = process.env.API_URL || "http://localhost:4000";
+const GOOGLE_REDIRECT_URI = `${API_URL}/api/auth/google/callback`;
+
 function generateToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name },
@@ -199,6 +206,104 @@ router.post("/verify-phone", async (req, res) => {
     res.json({ success: true, message: "Phone verified successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/auth/google — redirect to Google OAuth consent screen ──
+router.get("/google", (req, res) => {
+  if (!GOOGLE_CLIENT_ID) {
+    return res.status(500).json({ error: "Google OAuth is not configured (missing GOOGLE_CLIENT_ID)" });
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    access_type: "offline",
+    prompt: "select_account",
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+// ── GET /api/auth/google/callback — exchange code for profile, issue JWT ──
+router.get("/google/callback", async (req, res) => {
+  try {
+    const { code, error: oauthError } = req.query;
+
+    if (oauthError) {
+      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent(oauthError)}`);
+    }
+    if (!code) {
+      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("No authorization code received")}`);
+    }
+
+    // Exchange code for tokens
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        grant_type: "authorization_code",
+      }),
+    });
+    const tokens = await tokenRes.json();
+
+    if (tokens.error) {
+      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent(tokens.error_description || tokens.error)}`);
+    }
+
+    // Get user profile from Google
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const profile = await profileRes.json();
+
+    if (!profile.email) {
+      return res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Could not retrieve email from Google")}`);
+    }
+
+    // Check if user exists by provider ID or email
+    let { rows } = await pool.query(
+      "SELECT * FROM users WHERE (auth_provider = 'google' AND provider_id = $1) OR email = $2",
+      [profile.id, profile.email.toLowerCase()]
+    );
+
+    let user;
+    if (rows.length > 0) {
+      user = rows[0];
+      if (!user.provider_id) {
+        await pool.query(
+          "UPDATE users SET auth_provider = 'google', provider_id = $1, email_verified = true WHERE id = $2",
+          [profile.id, user.id]
+        );
+      }
+      const refreshed = await pool.query("SELECT * FROM users WHERE id = $1", [user.id]);
+      user = refreshed.rows[0];
+    } else {
+      const userId = `user-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+      await pool.query(
+        `INSERT INTO users (id, first_name, last_name, email, auth_provider, provider_id, email_verified)
+         VALUES ($1, $2, $3, $4, 'google', $5, true)`,
+        [userId, profile.given_name || "", profile.family_name || "", profile.email.toLowerCase(), profile.id]
+      );
+      const created = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+      user = created.rows[0];
+    }
+
+    const token = generateToken(user);
+
+    // Redirect back to the frontend with the JWT token
+    res.redirect(`${APP_URL}?auth_token=${token}`);
+  } catch (err) {
+    console.error("[AUTH] Google OAuth callback error:", err);
+    res.redirect(`${APP_URL}?auth_error=${encodeURIComponent("Authentication failed. Please try again.")}`);
   }
 });
 
