@@ -38,3 +38,39 @@ export const fetchInspections = () => request("/inspections");
 
 /** Fetch claims with timelines */
 export const fetchClaims = () => request("/claims");
+
+/** Create a new owner (with optional nested properties/roofs) */
+export const createOwner = (data) =>
+  request("/accounts", { method: "POST", body: JSON.stringify(data) });
+
+/** Add a property to an existing owner */
+export const addProperty = (ownerId, data) =>
+  request(`/accounts/${ownerId}/properties`, { method: "POST", body: JSON.stringify(data) });
+
+/** File a new warranty claim */
+export const createClaim = (data) =>
+  request("/claims", { method: "POST", body: JSON.stringify(data) });
+
+/** Update a claim's status */
+export const updateClaimStatus = (id, status) =>
+  request(`/claims/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) });
+
+/** Schedule a new inspection */
+export const createInspection = (data) =>
+  request("/inspections", { method: "POST", body: JSON.stringify(data) });
+
+/** Update an inspection */
+export const updateInspection = (id, data) =>
+  request(`/inspections/${id}`, { method: "PUT", body: JSON.stringify(data) });
+
+/** Log a new roof access entry */
+export const createAccessLog = (data) =>
+  request("/access-logs", { method: "POST", body: JSON.stringify(data) });
+
+/** Create a new invoice */
+export const createInvoice = (data) =>
+  request("/invoices", { method: "POST", body: JSON.stringify(data) });
+
+/** Update an invoice */
+export const updateInvoice = (id, data) =>
+  request(`/invoices/${id}`, { method: "PUT", body: JSON.stringify(data) });

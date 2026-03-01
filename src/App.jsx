@@ -1,5 +1,5 @@
-import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims } from "./api";
-import { useState, useEffect } from "react";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice } from "./api";
+import { useState, useEffect, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════
    ROOF WARRANTY MANAGEMENT APP — Roof MRI Branded
@@ -135,7 +135,7 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
     {options ? (
       <select value={value} onChange={e => onChange(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none" }}>
         <option value="">{placeholder || "Select..."}</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {options.map(o => typeof o === "object" ? <option key={o.value} value={o.value}>{o.label}</option> : <option key={o} value={o}>{o}</option>)}
       </select>
     ) : (
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box" }} />
@@ -970,7 +970,325 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
   return null;
 }
 
-function Accounts({ onSelectRoof, OWNERS }) {
+// ══════════════════════════════════════════════════════════════════════
+//  MANAGEMENT MODALS — Create owners, claims, inspections, logs, invoices
+// ══════════════════════════════════════════════════════════════════════
+
+const modalOverlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 };
+const modalBox = { background: "#ffffff", borderRadius: 20, padding: 32, maxWidth: 600, width: "95vw", maxHeight: "90vh", overflowY: "auto", position: "relative" };
+const modalTitle = { fontSize: 20, fontWeight: 800, color: "#1e2c55", fontFamily: "'Poppins', sans-serif", margin: 0 };
+const modalClose = { background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#9ba3b5" };
+
+function AddOwnerModal({ open, onClose, onSaved }) {
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [propName, setPropName] = useState("");
+  const [propAddr, setPropAddr] = useState("");
+  const [roofSection, setRoofSection] = useState("");
+  const [roofType, setRoofType] = useState("");
+  const [roofSqft, setRoofSqft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const reset = () => { setName(""); setContact(""); setEmail(""); setPhone(""); setPropName(""); setPropAddr(""); setRoofSection(""); setRoofType(""); setRoofSqft(""); };
+
+  const handleSave = async () => {
+    if (!name) return;
+    setSaving(true);
+    try {
+      const data = { name, contact, email, phone };
+      if (propName) {
+        const prop = { name: propName, address: propAddr };
+        if (roofSection) {
+          prop.roofs = [{ section: roofSection, type: roofType || null, sqFt: roofSqft ? parseInt(roofSqft) : null }];
+        }
+        data.properties = [prop];
+      }
+      await createOwner(data);
+      reset();
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error creating owner: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Add New Owner</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Owner Name" value={name} onChange={setName} placeholder="e.g. Riverside Properties LLC" required />
+        <FormField label="Contact Person" value={contact} onChange={setContact} placeholder="e.g. John Smith" />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Email" value={email} onChange={setEmail} placeholder="john@example.com" type="email" />
+          <FormField label="Phone" value={phone} onChange={setPhone} placeholder="(555) 123-4567" />
+        </div>
+        <div style={{ borderTop: `1px solid ${C.g200}`, marginTop: 8, paddingTop: 16, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 12 }}>Property (optional)</div>
+          <FormField label="Property Name" value={propName} onChange={setPropName} placeholder="e.g. Oakwood Business Park" />
+          <FormField label="Address" value={propAddr} onChange={setPropAddr} placeholder="e.g. 123 Main St, Suite 200" />
+        </div>
+        {propName && <div style={{ borderTop: `1px solid ${C.g200}`, marginTop: 8, paddingTop: 16, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, fontFamily: F.head, marginBottom: 12 }}>Roof Section (optional)</div>
+          <FormField label="Section Name" value={roofSection} onChange={setRoofSection} placeholder="e.g. Main Building - Section A" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <FormField label="Roof Type" value={roofType} onChange={setRoofType} options={["TPO", "PVC", "EPDM", "Modified Bitumen", "BUR", "Metal", "Acrylic Coating", "Silicone Coating", "SPF"]} />
+            <FormField label="Square Footage" value={roofSqft} onChange={setRoofSqft} placeholder="e.g. 25000" type="number" />
+          </div>
+        </div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!name || saving) ? 0.5 : 1 }}>{saving ? "Saving..." : "Create Owner"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileClaimModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !manufacturer) return;
+    setSaving(true);
+    try {
+      await createClaim({ roofId, manufacturer, amount: amount ? parseFloat(amount) : 0, description });
+      setRoofId(""); setManufacturer(""); setAmount(""); setDescription("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error filing claim: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>File Warranty Claim</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={(v) => { setRoofId(v); const r = roofs.find(r2 => r2.id === v); if (r) setManufacturer(r.warranty.manufacturer || ""); }} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName} · {selectedRoof.ownerName}</div>}
+        <FormField label="Manufacturer" value={manufacturer} onChange={setManufacturer} placeholder="e.g. GAF" required />
+        <FormField label="Claim Amount ($)" value={amount} onChange={setAmount} placeholder="e.g. 15000" type="number" />
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Description<span style={{ color: C.red }}> *</span></label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe the issue or damage..." rows={3} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !manufacturer || saving) ? 0.5 : 1 }}>{saving ? "Filing..." : "File Claim"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleInspectionModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [date, setDate] = useState("");
+  const [type, setType] = useState("");
+  const [inspector, setInspector] = useState("");
+  const [company, setCompany] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !date || !type) return;
+    setSaving(true);
+    try {
+      await createInspection({ roofId, date, type, inspector, company, notes });
+      setRoofId(""); setDate(""); setType(""); setInspector(""); setCompany(""); setNotes("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error scheduling inspection: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Schedule Inspection</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={setRoofId} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Date" value={date} onChange={setDate} type="date" required />
+          <FormField label="Inspection Type" value={type} onChange={setType} required options={["Annual Inspection", "Bi-Annual Inspection", "Warranty Required", "Post-Storm", "Moisture Survey", "Maintenance Check"]} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Inspector" value={inspector} onChange={setInspector} placeholder="e.g. Mike Johnson" />
+          <FormField label="Company" value={company} onChange={setCompany} placeholder="e.g. Roof MRI" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Special instructions or notes..." rows={2} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !date || !type || saving) ? 0.5 : 1 }}>{saving ? "Scheduling..." : "Schedule Inspection"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LogAccessModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [person, setPerson] = useState("");
+  const [company, setCompany] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [duration, setDuration] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !person) return;
+    setSaving(true);
+    try {
+      await createAccessLog({ roofId, person, company, purpose, date, duration, notes });
+      setRoofId(""); setPerson(""); setCompany(""); setPurpose(""); setDate(new Date().toISOString().split("T")[0]); setDuration(""); setNotes("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error logging access: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Log Roof Access</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={setRoofId} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Person" value={person} onChange={setPerson} placeholder="e.g. Mike Johnson" required />
+          <FormField label="Company" value={company} onChange={setCompany} placeholder="e.g. HVAC Solutions" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <FormField label="Purpose" value={purpose} onChange={setPurpose} options={["Inspection", "Repair", "HVAC Service", "Maintenance", "Warranty Evaluation", "Other"]} />
+          <FormField label="Date" value={date} onChange={setDate} type="date" />
+          <FormField label="Duration" value={duration} onChange={setDuration} placeholder="e.g. 2 hours" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !person || saving) ? 0.5 : 1 }}>{saving ? "Saving..." : "Log Access"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateInvoiceModal({ open, onClose, onSaved, OWNERS }) {
+  const roofs = allRoofs(OWNERS);
+  const [roofId, setRoofId] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [flagged, setFlagged] = useState(false);
+  const [flagReason, setFlagReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const selectedRoof = roofs.find(r => r.id === roofId);
+
+  const handleSave = async () => {
+    if (!roofId || !vendor) return;
+    setSaving(true);
+    try {
+      await createInvoice({ roofId, vendor, date, amount: amount ? parseFloat(amount) : 0, description, flagged, flagReason: flagged ? flagReason : null });
+      setRoofId(""); setVendor(""); setDate(new Date().toISOString().split("T")[0]); setAmount(""); setDescription(""); setFlagged(false); setFlagReason("");
+      onSaved();
+      onClose();
+    } catch (err) {
+      alert("Error creating invoice: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={modalTitle}>Create Invoice</h2>
+          <button onClick={onClose} style={modalClose}>×</button>
+        </div>
+        <FormField label="Roof Section" value={roofId} onChange={setRoofId} placeholder="Select roof..." required options={roofs.map(r => ({ value: r.id, label: `${r.section} — ${r.propName}` }))} />
+        {selectedRoof && <div style={{ fontSize: 12, color: C.g600, marginTop: -12, marginBottom: 12 }}>{selectedRoof.section} · {selectedRoof.propName}</div>}
+        <FormField label="Vendor" value={vendor} onChange={setVendor} placeholder="e.g. ABC Roofing Co." required />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <FormField label="Date" value={date} onChange={setDate} type="date" />
+          <FormField label="Amount ($)" value={amount} onChange={setAmount} placeholder="e.g. 5000" type="number" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.g600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F.head, marginBottom: 6 }}>Description</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Invoice details..." rows={2} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${C.g200}`, background: C.white, fontSize: 14, fontFamily: F.body, color: C.navy, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: C.navy, fontFamily: F.body, cursor: "pointer" }}>
+            <input type="checkbox" checked={flagged} onChange={e => setFlagged(e.target.checked)} style={{ width: 16, height: 16 }} />
+            Flag for warranty review
+          </label>
+        </div>
+        {flagged && <FormField label="Flag Reason" value={flagReason} onChange={setFlagReason} placeholder="e.g. Work may be covered under warranty" />}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={handleSave} style={{ opacity: (!roofId || !vendor || saving) ? 0.5 : 1 }}>{saving ? "Creating..." : "Create Invoice"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Accounts({ onSelectRoof, OWNERS, onAdd }) {
   const [q, setQ] = useState("");
   const [exp, setExp] = useState({});
   const toggle = (id) => setExp(p => ({ ...p, [id]: !p[id] }));
@@ -984,7 +1302,7 @@ function Accounts({ onSelectRoof, OWNERS }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Account Management</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Manage owners, property managers, and building portfolios</p></div>
-      <Btn primary>{Ic.plus} Add Owner</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} Add Owner</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Owners" value={owners.length} icon={Ic.user} />
@@ -1121,12 +1439,12 @@ function Warranties({ selectedRoof, setSelectedRoof, OWNERS, pricingStore, setPr
   </div>;
 }
 
-function AccessLog({ ACCESS_LOGS, OWNERS }) {
+function AccessLog({ ACCESS_LOGS, OWNERS, onAdd }) {
   return <div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Roof Access Log</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>QR-based tracking of everyone who goes on the roof</p></div>
-      <Btn primary>{Ic.qr} Generate QR Code</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} Log Access</Btn>
     </div>
     {(ACCESS_LOGS || []).map(log => { const r=findRoof(OWNERS, log.roofId); const isU=log.person==="Unknown"; return <Card key={log.id} style={{ marginBottom: 10, borderLeft: isU ? `4px solid ${C.red}` : `4px solid ${C.g200}` }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1141,13 +1459,16 @@ function AccessLog({ ACCESS_LOGS, OWNERS }) {
   </div>;
 }
 
-function InvoicesTab({ INVOICES, OWNERS }) {
+function InvoicesTab({ INVOICES, OWNERS, onAdd }) {
   const invoices = INVOICES || [];
   const flagged = invoices.filter(i => i.flagged);
   const potentialRecovery = flagged.reduce((s, i) => s + i.amount, 0);
   return <div>
-    <h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Invoice Tracker</h2>
-    <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "0 0 20px" }}>Upload, tag, and flag invoices against warranty coverage</p>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+      <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: "0 0 4px" }}>Invoice Tracker</h2>
+      <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: 0 }}>Upload, tag, and flag invoices against warranty coverage</p></div>
+      <Btn primary onClick={onAdd}>{Ic.plus} Create Invoice</Btn>
+    </div>
     {potentialRecovery > 0 && <div style={{ background: C.yellowBg, border: `1.5px solid ${C.yellowBdr}`, borderRadius: 14, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
       <span style={{ color: C.yellow }}>{Ic.alert}</span>
       <div><div style={{ fontSize: 14, fontWeight: 700, color: "#92400e", fontFamily: F.head }}>Potential Warranty Recovery: {fmtMoney(potentialRecovery)}</div>
@@ -1172,7 +1493,7 @@ function InvoicesTab({ INVOICES, OWNERS }) {
   </div>;
 }
 
-function InspectionsTab({ INSPECTIONS, OWNERS }) {
+function InspectionsTab({ INSPECTIONS, OWNERS, onAdd }) {
   const inspections = INSPECTIONS || [];
   const upcoming = inspections.filter(i => i.status === "scheduled" || i.status === "overdue");
   const completed = inspections.filter(i => i.status === "completed");
@@ -1180,7 +1501,7 @@ function InspectionsTab({ INSPECTIONS, OWNERS }) {
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Inspection Manager</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Schedule, track, and document warranty-required inspections</p></div>
-      <Btn primary>{Ic.plus} Schedule Inspection</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} Schedule Inspection</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Upcoming" value={upcoming.length} icon={Ic.cal} color={C.blue} />
@@ -1212,14 +1533,14 @@ function InspectionsTab({ INSPECTIONS, OWNERS }) {
   </div>;
 }
 
-function ClaimsTab({ CLAIMS, OWNERS }) {
+function ClaimsTab({ CLAIMS, OWNERS, onAdd }) {
   const claims = CLAIMS || [];
   const recovered = claims.filter(c=>c.status==="approved").reduce((s,c)=>s+c.amount,0);
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 18, fontWeight: 800, color: C.navy, fontFamily: F.head, margin: 0 }}>Warranty Claims</h2>
       <p style={{ fontSize: 13, color: C.g600, fontFamily: F.body, margin: "4px 0 0" }}>Initiate, track, and resolve manufacturer warranty claims</p></div>
-      <Btn primary>{Ic.plus} File Claim</Btn>
+      <Btn primary onClick={onAdd}>{Ic.plus} File Claim</Btn>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
       <KPI label="Total Claims" value={claims.length} icon={Ic.file} />
@@ -1259,6 +1580,13 @@ export default function App() {
   const [selectedRoof, setSelectedRoof] = useState(null);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
 
+  // ── Modal State ──
+  const [addOwnerOpen, setAddOwnerOpen] = useState(false);
+  const [fileClaimOpen, setFileClaimOpen] = useState(false);
+  const [scheduleInspOpen, setScheduleInspOpen] = useState(false);
+  const [logAccessOpen, setLogAccessOpen] = useState(false);
+  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+
   // ── API State ──
   const [owners, setOwners] = useState([]);
   const [warrantyDb, setWarrantyDb] = useState([]);
@@ -1270,8 +1598,8 @@ export default function App() {
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([
+  const loadAll = useCallback(() => {
+    return Promise.all([
       fetchAccounts().catch(() => []),
       fetchWarrantyDb().catch(() => []),
       fetchPricingStore().catch(() => ({})),
@@ -1291,6 +1619,15 @@ export default function App() {
     });
   }, []);
 
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Targeted refresh functions — only re-fetch the data that changed
+  const refreshAccounts = useCallback(() => fetchAccounts().catch(() => []).then(setOwners), []);
+  const refreshClaims = useCallback(() => fetchClaims().catch(() => []).then(setClaims), []);
+  const refreshInspections = useCallback(() => fetchInspections().catch(() => []).then(setInspections), []);
+  const refreshAccessLogs = useCallback(() => fetchAccessLogs().catch(() => []).then(setAccessLogs), []);
+  const refreshInvoices = useCallback(() => fetchInvoices().catch(() => []).then(setInvoices), []);
+
   const onSelectRoof = (roofId) => { setSelectedRoof(roofId); setTab("warranties"); };
 
   if (loading) return (
@@ -1307,6 +1644,11 @@ export default function App() {
   return <div style={{ minHeight: "100vh", background: C.g50, fontFamily: F.body }}>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} WARRANTY_DB={warrantyDb} />
+    <AddOwnerModal open={addOwnerOpen} onClose={() => setAddOwnerOpen(false)} onSaved={refreshAccounts} />
+    <FileClaimModal open={fileClaimOpen} onClose={() => setFileClaimOpen(false)} onSaved={refreshClaims} OWNERS={owners} />
+    <ScheduleInspectionModal open={scheduleInspOpen} onClose={() => setScheduleInspOpen(false)} onSaved={refreshInspections} OWNERS={owners} />
+    <LogAccessModal open={logAccessOpen} onClose={() => setLogAccessOpen(false)} onSaved={refreshAccessLogs} OWNERS={owners} />
+    <CreateInvoiceModal open={createInvoiceOpen} onClose={() => setCreateInvoiceOpen(false)} onSaved={refreshInvoices} OWNERS={owners} />
     <div style={{ background: C.navy, padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 34, height: 34, borderRadius: 8, background: C.green, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1321,12 +1663,12 @@ export default function App() {
       {TABS.map(t => <button key={t.id} onClick={() => { setTab(t.id); if(t.id!=="warranties") setSelectedRoof(null); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "14px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab===t.id?700:500, fontFamily: F.head, color: tab===t.id?C.green:C.g400, borderBottom: tab===t.id?`2.5px solid ${C.green}`:"2.5px solid transparent", whiteSpace: "nowrap" }}>{t.icon}{t.label}</button>)}
     </div>
     <div style={{ padding: "24px 32px" }}>
-      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} />}
+      {tab === "accounts" && <Accounts onSelectRoof={onSelectRoof} OWNERS={owners} onAdd={() => setAddOwnerOpen(true)} />}
       {tab === "warranties" && <Warranties selectedRoof={selectedRoof} setSelectedRoof={setSelectedRoof} OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} />}
-      {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} />}
-      {tab === "invoices" && <InvoicesTab INVOICES={invoices} OWNERS={owners} />}
-      {tab === "inspections" && <InspectionsTab INSPECTIONS={inspections} OWNERS={owners} />}
-      {tab === "claims" && <ClaimsTab CLAIMS={claims} OWNERS={owners} />}
+      {tab === "access" && <AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />}
+      {tab === "invoices" && <InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />}
+      {tab === "inspections" && <InspectionsTab INSPECTIONS={inspections} OWNERS={owners} onAdd={() => setScheduleInspOpen(true)} />}
+      {tab === "claims" && <ClaimsTab CLAIMS={claims} OWNERS={owners} onAdd={() => setFileClaimOpen(true)} />}
     </div>
     <button onClick={() => setAnalyzerOpen(true)} style={{ position: "fixed", bottom: 24, right: 24, display: "flex", alignItems: "center", gap: 8, padding: "14px 22px", borderRadius: 16, background: C.green, border: "none", color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", boxShadow: `0 4px 20px ${C.green}50`, zIndex: 100 }}>{Ic.zap} Warranty Analyzer</button>
   </div>;

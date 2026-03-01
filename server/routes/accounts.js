@@ -55,4 +55,94 @@ router.get("/", async (_req, res) => {
   }
 });
 
+// POST /api/accounts — create a new owner with optional properties and roofs
+router.post("/", async (req, res) => {
+  try {
+    const { name, contact, email, phone, notes, properties } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+
+    const ownerId = `owner-${Date.now()}`;
+    await pool.query(
+      "INSERT INTO owners (id, name, contact, email, phone, notes) VALUES ($1, $2, $3, $4, $5, $6)",
+      [ownerId, name, contact || null, email || null, phone || null, notes || null]
+    );
+
+    // Create properties and roofs if provided
+    if (properties && Array.isArray(properties)) {
+      for (const prop of properties) {
+        const propId = `prop-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        await pool.query(
+          "INSERT INTO properties (id, owner_id, name, address) VALUES ($1, $2, $3, $4)",
+          [propId, ownerId, prop.name, prop.address || null]
+        );
+
+        if (prop.roofs && Array.isArray(prop.roofs)) {
+          for (const roof of prop.roofs) {
+            const roofId = `roof-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            await pool.query(
+              "INSERT INTO roofs (id, property_id, section, sq_ft, type, installed) VALUES ($1, $2, $3, $4, $5, $6)",
+              [roofId, propId, roof.section, roof.sqFt || null, roof.type || null, roof.installed || null]
+            );
+
+            if (roof.warranty) {
+              const w = roof.warranty;
+              await pool.query(
+                `INSERT INTO roof_warranties (roof_id, manufacturer, w_type, start_date, end_date, status, compliance, next_insp, coverage, exclusions, requirements)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [roofId, w.manufacturer || null, w.wType || null, w.start || null, w.end || null,
+                 w.status || "active", w.compliance || "current", w.nextInsp || null,
+                 JSON.stringify(w.coverage || []), JSON.stringify(w.exclusions || []), JSON.stringify(w.requirements || [])]
+              );
+            }
+          }
+        }
+      }
+    }
+
+    res.json({ success: true, id: ownerId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/accounts/:ownerId/properties — add a property to an existing owner
+router.post("/:ownerId/properties", async (req, res) => {
+  try {
+    const { ownerId } = req.params;
+    const { name, address, roofs } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+
+    const propId = `prop-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await pool.query(
+      "INSERT INTO properties (id, owner_id, name, address) VALUES ($1, $2, $3, $4)",
+      [propId, ownerId, name, address || null]
+    );
+
+    if (roofs && Array.isArray(roofs)) {
+      for (const roof of roofs) {
+        const roofId = `roof-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        await pool.query(
+          "INSERT INTO roofs (id, property_id, section, sq_ft, type, installed) VALUES ($1, $2, $3, $4, $5, $6)",
+          [roofId, propId, roof.section, roof.sqFt || null, roof.type || null, roof.installed || null]
+        );
+
+        if (roof.warranty) {
+          const w = roof.warranty;
+          await pool.query(
+            `INSERT INTO roof_warranties (roof_id, manufacturer, w_type, start_date, end_date, status, compliance, next_insp, coverage, exclusions, requirements)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [roofId, w.manufacturer || null, w.wType || null, w.start || null, w.end || null,
+             w.status || "active", w.compliance || "current", w.nextInsp || null,
+             JSON.stringify(w.coverage || []), JSON.stringify(w.exclusions || []), JSON.stringify(w.requirements || [])]
+          );
+        }
+      }
+    }
+
+    res.json({ success: true, id: propId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
