@@ -976,10 +976,10 @@ function WarrantyAnalyzer({ open, onClose, WARRANTY_DB }) {
 
 const COMPANY_TYPES = ["Commercial Roofing", "Product Manufacturing", "Consulting", "Architect", "GC", "Other"];
 
-function AuthScreen({ onAuth }) {
+function AuthScreen({ onAuth, oauthError: initialOauthError }) {
   const [mode, setMode] = useState("signup"); // "signup" | "login"
   const [step, setStep] = useState(0); // 0=credentials, 1=profile, 2=phone verify
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialOauthError || "");
   const [loading, setLoading] = useState(false);
 
   // Form fields
@@ -1974,20 +1974,41 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   // Check for existing auth token on mount, or handle OAuth callback
+  const [oauthError, setOauthError] = useState("");
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const oauthToken = params.get("auth_token");
-    const oauthError = params.get("auth_error");
+    const oauthErr = params.get("auth_error");
 
     // Clean up URL params from OAuth redirect
-    if (oauthToken || oauthError) {
+    if (oauthToken || oauthErr) {
       window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    if (oauthErr) {
+      setOauthError(oauthErr);
+      setAuthChecked(true);
+      return;
     }
 
     if (oauthToken) {
       localStorage.setItem("auth_token", oauthToken);
       getMe().then(res => { setUser(res.user); setAuthChecked(true); })
-        .catch(() => { localStorage.removeItem("auth_token"); setAuthChecked(true); });
+        .catch((err) => {
+          console.error("[OAuth] getMe failed after Google login:", err);
+          // Fallback: decode the JWT payload directly to get user info
+          try {
+            const payload = JSON.parse(atob(oauthToken.split(".")[1]));
+            setUser({ id: payload.id, email: payload.email, firstName: payload.firstName, lastName: payload.lastName });
+            setAuthChecked(true);
+          } catch (decodeErr) {
+            console.error("[OAuth] JWT decode fallback also failed:", decodeErr);
+            localStorage.removeItem("auth_token");
+            setOauthError("Login succeeded but failed to load your profile. Please try again.");
+            setAuthChecked(true);
+          }
+        });
     } else {
       const token = localStorage.getItem("auth_token");
       if (token) {
@@ -2054,7 +2075,7 @@ export default function App() {
   if (!user) return (
     <>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <AuthScreen onAuth={handleAuth} />
+      <AuthScreen onAuth={handleAuth} oauthError={oauthError} />
     </>
   );
 
