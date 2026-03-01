@@ -1,5 +1,19 @@
 -- Warranty Management App — PostgreSQL Schema
 
+-- Drop existing tables in reverse dependency order for clean re-seed
+DROP TABLE IF EXISTS claim_events CASCADE;
+DROP TABLE IF EXISTS claims CASCADE;
+DROP TABLE IF EXISTS inspections CASCADE;
+DROP TABLE IF EXISTS invoices CASCADE;
+DROP TABLE IF EXISTS access_logs CASCADE;
+DROP TABLE IF EXISTS pricing_submissions CASCADE;
+DROP TABLE IF EXISTS warranty_db CASCADE;
+DROP TABLE IF EXISTS roof_warranties CASCADE;
+DROP TABLE IF EXISTS roofs CASCADE;
+DROP TABLE IF EXISTS properties CASCADE;
+DROP TABLE IF EXISTS property_managers CASCADE;
+DROP TABLE IF EXISTS owners CASCADE;
+
 -- Owners
 CREATE TABLE IF NOT EXISTS owners (
   id TEXT PRIMARY KEY,
