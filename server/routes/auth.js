@@ -2,8 +2,14 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import twilio from "twilio";
 import pool from "../db.js";
 import { seedDemoData, clearDemoData } from "../demoData.js";
+
+const twilioClient =
+  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    : null;
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "warranty-mgmt-dev-secret-change-in-prod";
@@ -185,8 +191,15 @@ router.post("/send-phone-code", async (req, res) => {
       [phone, code, expires, userId]
     );
 
-    // In production, send via Twilio, Vonage, etc.
-    console.log(`[AUTH] Phone verification code for ${phone}: ${code}`);
+    if (twilioClient && process.env.TWILIO_PHONE_NUMBER) {
+      await twilioClient.messages.create({
+        body: `Your warranty app verification code is: ${code}`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: phone,
+      });
+    } else {
+      console.log(`[AUTH] Phone verification code for ${phone}: ${code} (Twilio not configured)`);
+    }
 
     res.json({ success: true, message: "Verification code sent" });
   } catch (err) {
