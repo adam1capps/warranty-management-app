@@ -1,6 +1,11 @@
-import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData, requestPasswordReset, resetPassword, convertToExamples } from "./api";
+import { fetchAccounts, fetchWarrantyDb, fetchPricingStore, submitPricing as submitPricingApi, fetchAccessLogs, fetchInvoices, fetchInspections, fetchClaims, createOwner, addProperty, createClaim, createInspection, createAccessLog, createInvoice, register, login, getMe, sendPhoneCode, verifyPhone, ssoAuth, checkDemoData, clearDemoData, requestPasswordReset, resetPassword, convertToExamples, createClaimFromInvoice, fetchPhotos, uploadPhoto, deletePhoto, fetchContractorDashboard, fetchCustomerDashboard, fetchPropertyDashboard } from "./api";
 import { useState, useEffect, useCallback } from "react";
 import { Routes, Route, useNavigate, useLocation, useParams } from "react-router-dom";
+import AddClientWizard from "./components/AddClientWizard";
+import ContractorDashboard from "./components/ContractorDashboard";
+import CustomerDashboard from "./components/CustomerDashboard";
+import PropertyDashboard from "./components/PropertyDashboard";
+import PhotoUpload from "./components/PhotoUpload";
 
 /* ═══════════════════════════════════════════════════════════════════
    ROOF WARRANTY MANAGEMENT APP — Roof MRI Branded
@@ -2156,7 +2161,7 @@ function AccessLog({ ACCESS_LOGS, OWNERS, onAdd }) {
   </div>;
 }
 
-function InvoicesTab({ INVOICES, OWNERS, onAdd }) {
+function InvoicesTab({ INVOICES, OWNERS, onAdd, onFileClaim }) {
   const invoices = INVOICES || [];
   const flagged = invoices.filter(i => i.flagged);
   const potentialRecovery = flagged.reduce((s, i) => s + i.amount, 0);
@@ -2186,6 +2191,11 @@ function InvoicesTab({ INVOICES, OWNERS, onAdd }) {
       {inv.flagged && <div style={{ marginTop: 10, padding: "10px 14px", background: C.yellowBg, borderRadius: 8, border: `1px solid ${C.yellowBdr}`, display: "flex", gap: 8 }}>
         <span style={{ color: C.yellow }}>{Ic.flag}</span><span style={{ fontSize: 12, color: "#92400e" }}>{inv.flagReason}</span>
       </div>}
+      {onFileClaim && r && r.warranty && r.warranty.manufacturer && (
+        <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+          <button onClick={() => onFileClaim(inv.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, background: C.blueBg, border: `1px solid ${C.blue}30`, color: C.blue, fontSize: 12, fontWeight: 700, fontFamily: F.head, cursor: "pointer" }}>{Ic.file} File Claim</button>
+        </div>
+      )}
     </Card>; })}
   </div>;
 }
@@ -2423,6 +2433,7 @@ function GuidedTour({ open, onClose }) {
 }
 
 const TABS = [
+  { id: "dashboard", label: "Dashboard", icon: Ic.target },
   { id: "accounts", label: "Accounts", icon: Ic.building },
   { id: "warranties", label: "Warranties", icon: Ic.shield },
   { id: "access", label: "Access Log", icon: Ic.qr },
@@ -2436,9 +2447,9 @@ export default function App() {
   const location = useLocation();
 
   // Derive current tab from URL path
-  const pathSegment = location.pathname.split("/")[1] || "accounts";
-  const TAB_IDS = ["accounts", "warranties", "access", "invoices", "inspections", "claims"];
-  const tab = TAB_IDS.includes(pathSegment) ? pathSegment : "accounts";
+  const pathSegment = location.pathname.split("/")[1] || "dashboard";
+  const TAB_IDS = ["dashboard", "accounts", "warranties", "access", "invoices", "inspections", "claims", "customers", "properties"];
+  const tab = TAB_IDS.includes(pathSegment) ? pathSegment : "dashboard";
 
   // ── Auth State ──
   const [user, setUser] = useState(null);
@@ -2639,7 +2650,7 @@ export default function App() {
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <WarrantyAnalyzer open={analyzerOpen} onClose={() => setAnalyzerOpen(false)} WARRANTY_DB={warrantyDb} />
     <GuidedTour open={tourOpen} onClose={() => { setTourOpen(false); localStorage.setItem("tour_completed", "true"); }} />
-    <AddOwnerModal open={addOwnerOpen} onClose={() => setAddOwnerOpen(false)} onSaved={refreshAccounts} />
+    <AddClientWizard open={addOwnerOpen} onClose={() => setAddOwnerOpen(false)} onSaved={refreshAccounts} warrantyDb={warrantyDb} />
     <FileClaimModal open={fileClaimOpen} onClose={() => setFileClaimOpen(false)} onSaved={refreshClaims} OWNERS={owners} />
     <ScheduleInspectionModal open={scheduleInspOpen} onClose={() => setScheduleInspOpen(false)} onSaved={refreshInspections} OWNERS={owners} />
     <LogAccessModal open={logAccessOpen} onClose={() => setLogAccessOpen(false)} onSaved={refreshAccessLogs} OWNERS={owners} />
@@ -2706,15 +2717,18 @@ export default function App() {
     </div>}
     <div style={{ padding: "24px 32px" }}>
       <Routes>
-        <Route path="/" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+        <Route path="/" element={<ContractorDashboard onNavigate={navigate} onAddClient={() => setAddOwnerOpen(true)} />} />
+        <Route path="/dashboard" element={<ContractorDashboard onNavigate={navigate} onAddClient={() => setAddOwnerOpen(true)} />} />
+        <Route path="/customers/:ownerId" element={<CustomerDashboard onNavigate={navigate} />} />
+        <Route path="/properties/:propertyId" element={<PropertyDashboard onNavigate={navigate} OWNERS={owners} onFileClaim={(invoiceId) => { setFileClaimOpen(true); }} onAddInspection={() => setScheduleInspOpen(true)} />} />
         <Route path="/accounts" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
         <Route path="/warranties" element={<Warranties OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />} />
         <Route path="/warranties/:roofId" element={<WarrantyDetail OWNERS={owners} pricingStore={pricingStore} setPricingStore={setPricingStore} pricingLoading={pricingLoading} CLAIMS={claims} />} />
         <Route path="/access" element={<AccessLog ACCESS_LOGS={accessLogs} OWNERS={owners} onAdd={() => setLogAccessOpen(true)} />} />
-        <Route path="/invoices" element={<InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} />} />
+        <Route path="/invoices" element={<InvoicesTab INVOICES={invoices} OWNERS={owners} onAdd={() => setCreateInvoiceOpen(true)} onFileClaim={async (invoiceId) => { try { await createClaimFromInvoice(invoiceId, {}); await refreshClaims(); await refreshInvoices(); alert("Claim filed successfully!"); } catch(e) { alert("Error: " + e.message); } }} />} />
         <Route path="/inspections" element={<InspectionsTab INSPECTIONS={inspections} OWNERS={owners} onAdd={() => setScheduleInspOpen(true)} />} />
         <Route path="/claims" element={<ClaimsTab CLAIMS={claims} OWNERS={owners} onAdd={() => setFileClaimOpen(true)} />} />
-        <Route path="*" element={<Accounts OWNERS={owners} CLAIMS={claims} onAdd={() => setAddOwnerOpen(true)} />} />
+        <Route path="*" element={<ContractorDashboard onNavigate={navigate} onAddClient={() => setAddOwnerOpen(true)} />} />
       </Routes>
     </div>
     <button onClick={() => setAnalyzerOpen(true)} style={{ position: "fixed", bottom: 24, right: 24, display: "flex", alignItems: "center", gap: 8, padding: "14px 22px", borderRadius: 16, background: C.green, border: "none", color: C.white, fontSize: 13, fontWeight: 700, fontFamily: F.head, cursor: "pointer", boxShadow: `0 4px 20px ${C.green}50`, zIndex: 100 }}>{Ic.zap} Warranty Analyzer</button>

@@ -58,11 +58,26 @@ router.get("/", async (req, res) => {
       params.push(membrane);
       conditions.push(`membranes @> $${params.length}::jsonb`);
     }
+    const { manufacturer } = req.query;
+    if (manufacturer) {
+      params.push(manufacturer);
+      conditions.push(`manufacturer = $${params.length}`);
+    }
     if (conditions.length) query += " WHERE " + conditions.join(" AND ");
     query += " ORDER BY rating DESC, name";
 
     const { rows } = await pool.query(query, params);
     res.json(rows.map(mapWarranty));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/warranties/manufacturers — distinct manufacturer list
+router.get("/manufacturers", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT DISTINCT manufacturer FROM warranty_db WHERE manufacturer IS NOT NULL ORDER BY manufacturer");
+    res.json(rows.map(r => r.manufacturer));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

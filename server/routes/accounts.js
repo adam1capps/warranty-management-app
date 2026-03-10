@@ -82,18 +82,19 @@ router.post("/", async (req, res) => {
           for (const roof of prop.roofs) {
             const roofId = `roof-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
             await pool.query(
-              "INSERT INTO roofs (id, user_id, property_id, section, sq_ft, type, installed) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-              [roofId, userId, propId, roof.section, roof.sqFt || null, roof.type || null, roof.installed || null]
+              "INSERT INTO roofs (id, user_id, property_id, section, sq_ft, type, installed, year_installed) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+              [roofId, userId, propId, roof.section, roof.sqFt || null, roof.type || null, roof.installed || null, roof.yearInstalled || null]
             );
 
             if (roof.warranty) {
               const w = roof.warranty;
               await pool.query(
-                `INSERT INTO roof_warranties (roof_id, manufacturer, w_type, start_date, end_date, status, compliance, next_insp, coverage, exclusions, requirements)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                `INSERT INTO roof_warranties (roof_id, manufacturer, w_type, start_date, end_date, status, compliance, next_insp, coverage, exclusions, requirements, warranty_db_id, maintenance_plan, repair_spend_last_year, covered_amount)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
                 [roofId, w.manufacturer || null, w.wType || null, w.start || null, w.end || null,
                  w.status || "active", w.compliance || "current", w.nextInsp || null,
-                 JSON.stringify(w.coverage || []), JSON.stringify(w.exclusions || []), JSON.stringify(w.requirements || [])]
+                 JSON.stringify(w.coverage || []), JSON.stringify(w.exclusions || []), JSON.stringify(w.requirements || []),
+                 w.warrantyDbId || null, w.maintenancePlan || false, w.repairSpendLastYear || null, w.coveredAmount || null]
               );
             }
           }
@@ -130,18 +131,19 @@ router.post("/:ownerId/properties", async (req, res) => {
       for (const roof of roofs) {
         const roofId = `roof-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         await pool.query(
-          "INSERT INTO roofs (id, user_id, property_id, section, sq_ft, type, installed) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-          [roofId, userId, propId, roof.section, roof.sqFt || null, roof.type || null, roof.installed || null]
+          "INSERT INTO roofs (id, user_id, property_id, section, sq_ft, type, installed, year_installed) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+          [roofId, userId, propId, roof.section, roof.sqFt || null, roof.type || null, roof.installed || null, roof.yearInstalled || null]
         );
 
         if (roof.warranty) {
           const w = roof.warranty;
           await pool.query(
-            `INSERT INTO roof_warranties (roof_id, manufacturer, w_type, start_date, end_date, status, compliance, next_insp, coverage, exclusions, requirements)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            `INSERT INTO roof_warranties (roof_id, manufacturer, w_type, start_date, end_date, status, compliance, next_insp, coverage, exclusions, requirements, warranty_db_id, maintenance_plan, repair_spend_last_year, covered_amount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
             [roofId, w.manufacturer || null, w.wType || null, w.start || null, w.end || null,
              w.status || "active", w.compliance || "current", w.nextInsp || null,
-             JSON.stringify(w.coverage || []), JSON.stringify(w.exclusions || []), JSON.stringify(w.requirements || [])]
+             JSON.stringify(w.coverage || []), JSON.stringify(w.exclusions || []), JSON.stringify(w.requirements || []),
+             w.warrantyDbId || null, w.maintenancePlan || false, w.repairSpendLastYear || null, w.coveredAmount || null]
           );
         }
       }

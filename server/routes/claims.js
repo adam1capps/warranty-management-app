@@ -34,6 +34,7 @@ router.get("/", async (req, res) => {
       amount: parseFloat(c.amount),
       status: c.status,
       desc: c.description,
+      invoiceId: c.invoice_id || null,
       timeline: eventMap[c.id] || [],
     })));
   } catch (err) {
@@ -45,7 +46,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { roofId, manufacturer, amount, description } = req.body;
+    const { roofId, manufacturer, amount, description, invoiceId } = req.body;
     if (!roofId || !manufacturer) return res.status(400).json({ error: "roofId and manufacturer are required" });
 
     // Verify user owns this roof
@@ -56,14 +57,48 @@ router.post("/", async (req, res) => {
     const filed = new Date().toISOString().split("T")[0];
 
     await pool.query(
-      "INSERT INTO claims (id, user_id, roof_id, manufacturer, filed, amount, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-      [claimId, userId, roofId, manufacturer, filed, amount || 0, "in-progress", description || null]
+      "INSERT INTO claims (id, user_id, roof_id, manufacturer, filed, amount, status, description, invoice_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+      [claimId, userId, roofId, manufacturer, filed, amount || 0, "in-progress", description || null, invoiceId || null]
     );
 
     // Create initial timeline event
     await pool.query(
       "INSERT INTO claim_events (claim_id, date, event, sort_order) VALUES ($1, $2, $3, $4)",
       [claimId, filed, "Claim filed", 0]
+    );
+
+    res.json({ success: true, id: claimId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/claims/from-invoice/:invoiceId — create claim pre-populated from invoice
+router.post("/from-invoice/:invoiceId", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { invoiceId } = req.params;
+
+    const { rows: invoiceRows } = await pool.query("SELECT * FROM invoices WHERE id = $1 AND user_id = $2", [invoiceId, userId]);
+    if (invoiceRows.length === 0) return res.status(404).json({ error: "Invoice not found" });
+    const invoice = invoiceRows[0];
+
+    // Get manufacturer from roof warranty
+    const { rows: warrantyRows } = await pool.query("SELECT manufacturer FROM roof_warranties WHERE roof_id = $1", [invoice.roof_id]);
+    const manufacturer = req.body.manufacturer || warrantyRows[0]?.manufacturer || "Unknown";
+
+    const claimId = `claim-${Date.now()}`;
+    const filed = new Date().toISOString().split("T")[0];
+    const description = req.body.description || `Claim for invoice from ${invoice.vendor || "vendor"}: ${invoice.description || ""}`.trim();
+
+    await pool.query(
+      "INSERT INTO claims (id, user_id, roof_id, manufacturer, filed, amount, status, description, invoice_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+      [claimId, userId, invoice.roof_id, manufacturer, filed, parseFloat(invoice.amount || 0), "in-progress", description, invoiceId]
+    );
+
+    await pool.query(
+      "INSERT INTO claim_events (claim_id, date, event, sort_order) VALUES ($1, $2, $3, $4)",
+      [claimId, filed, `Claim filed from invoice (${invoice.vendor || "vendor"} - $${invoice.amount || 0})`, 0]
     );
 
     res.json({ success: true, id: claimId });

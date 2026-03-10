@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS roofs (
   section TEXT NOT NULL,
   sq_ft INTEGER,
   type TEXT,
-  installed DATE
+  installed DATE,
+  year_installed INTEGER
 );
 
 -- Roof Warranties
@@ -95,7 +96,11 @@ CREATE TABLE IF NOT EXISTS roof_warranties (
   last_insp DATE,
   coverage JSONB DEFAULT '[]',
   exclusions JSONB DEFAULT '[]',
-  requirements JSONB DEFAULT '[]'
+  requirements JSONB DEFAULT '[]',
+  warranty_db_id TEXT REFERENCES warranty_db(id) ON DELETE SET NULL,
+  maintenance_plan BOOLEAN DEFAULT false,
+  repair_spend_last_year NUMERIC(12,2),
+  covered_amount NUMERIC(12,2)
 );
 
 -- Warranty Database (223 warranty options — coatings + single-ply)
@@ -203,8 +208,21 @@ CREATE TABLE IF NOT EXISTS claims (
   filed DATE,
   amount NUMERIC(12,2) DEFAULT 0,
   status TEXT DEFAULT 'in-progress',
-  description TEXT
+  description TEXT,
+  invoice_id TEXT REFERENCES invoices(id) ON DELETE SET NULL
 );
+
+-- Photos (polymorphic: inspection, claim, invoice, roof)
+CREATE TABLE IF NOT EXISTS photos (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('inspection', 'claim', 'invoice', 'roof')),
+  entity_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  caption TEXT,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_photos_entity ON photos(entity_type, entity_id);
 
 -- Claim Timeline Events
 CREATE TABLE IF NOT EXISTS claim_events (
