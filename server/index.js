@@ -9,6 +9,8 @@ import accessLogsRouter from "./routes/accessLogs.js";
 import invoicesRouter from "./routes/invoices.js";
 import inspectionsRouter from "./routes/inspections.js";
 import claimsRouter from "./routes/claims.js";
+import photosRouter from "./routes/photos.js";
+import dashboardRouter from "./routes/dashboard.js";
 import authRouter from "./routes/auth.js";
 
 const app = express();
@@ -35,7 +37,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 // JWT authentication middleware — protects business routes
 function requireAuth(req, res, next) {
@@ -73,5 +75,7 @@ app.use("/api/access-logs", requireAuth, accessLogsRouter);
 app.use("/api/invoices", requireAuth, invoicesRouter);
 app.use("/api/inspections", requireAuth, inspectionsRouter);
 app.use("/api/claims", requireAuth, claimsRouter);
+app.use("/api/photos", requireAuth, photosRouter);
+app.use("/api/dashboard", requireAuth, dashboardRouter);
 
 app.listen(PORT, () => console.log(`API server listening on port ${PORT}`));

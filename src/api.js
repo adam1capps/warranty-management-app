@@ -83,6 +83,34 @@ export const createInvoice = (data) =>
 export const updateInvoice = (id, data) =>
   request(`/invoices/${id}`, { method: "PUT", body: JSON.stringify(data) });
 
+/** Fetch warranty manufacturers list */
+export const fetchWarrantyManufacturers = () => request("/warranties/manufacturers");
+
+/** Fetch photos for an entity */
+export const fetchPhotos = (entityType, entityId) =>
+  request(`/photos?entityType=${entityType}&entityId=${entityId}`);
+
+/** Upload a photo */
+export const uploadPhoto = (data) =>
+  request("/photos", { method: "POST", body: JSON.stringify(data) });
+
+/** Delete a photo */
+export const deletePhoto = (id) =>
+  request(`/photos/${id}`, { method: "DELETE" });
+
+/** Create claim from invoice */
+export const createClaimFromInvoice = (invoiceId, data) =>
+  request(`/claims/from-invoice/${invoiceId}`, { method: "POST", body: JSON.stringify(data) });
+
+/** Fetch contractor dashboard */
+export const fetchContractorDashboard = () => request("/dashboard/contractor");
+
+/** Fetch customer dashboard */
+export const fetchCustomerDashboard = (ownerId) => request(`/dashboard/customer/${ownerId}`);
+
+/** Fetch property dashboard */
+export const fetchPropertyDashboard = (propertyId) => request(`/dashboard/property/${propertyId}`);
+
 // ── Auth API ──
 
 /** Register with email + password */
