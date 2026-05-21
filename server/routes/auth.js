@@ -3,8 +3,13 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import twilio from "twilio";
+import sgMail from "@sendgrid/mail";
 import pool from "../db.js";
 import { seedDemoData, clearDemoData } from "../demoData.js";
+
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 const twilioClient =
   process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
@@ -399,8 +404,34 @@ router.post("/forgot-password", async (req, res) => {
     const resetUrl = `${APP_URL}?reset_token=${resetToken}`;
     console.log(`[AUTH] Password reset link for ${email}: ${resetUrl}`);
 
-    // In production: send this via email service (SendGrid, SES, etc.)
-    // For now, log it to console. The link will work when clicked.
+    if (process.env.SENDGRID_API_KEY) {
+      try {
+        await sgMail.send({
+          to: user.email,
+          from: { email: "adam@re-dry.com", name: "Roof MRI" },
+          subject: "Reset Your Password — Roof MRI",
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1B2A4A">
+            <div style="background:#1B2A4A;padding:16px 20px;text-align:center">
+              <span style="color:#fff;font-size:18px;font-weight:700">ROOF <span style="color:#00bd70">MRI</span></span>
+            </div>
+            <div style="padding:24px;background:#fff;border:1px solid #e2e8f0">
+              <h2 style="color:#1B2A4A;margin:0 0 16px;font-size:20px">Password Reset</h2>
+              <p style="font-size:14px;color:#374151;line-height:1.6;margin-bottom:16px">Hi ${user.first_name || "there"},</p>
+              <p style="font-size:14px;color:#374151;line-height:1.6;margin-bottom:24px">We received a request to reset your password. Click the button below to choose a new one. This link expires in 1 hour.</p>
+              <div style="text-align:center;margin-bottom:24px">
+                <a href="${resetUrl}" style="display:inline-block;background:#00bd70;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">Reset Password</a>
+              </div>
+              <p style="font-size:13px;color:#64748b;line-height:1.6">If you didn’t request this, you can safely ignore this email. Your password won’t change.</p>
+            </div>
+            <div style="background:#1B2A4A;padding:12px 20px;text-align:center">
+              <p style="margin:0;font-size:11px;color:#94a3b8">Roof MRI | Advancing the Science of Roof Moisture Detection</p>
+            </div>
+          </div>`,
+        });
+      } catch (emailErr) {
+        console.error("[AUTH] Failed to send reset email:", emailErr);
+      }
+    }
 
     res.json({ success: true, message: "If an account exists, a reset link has been sent" });
   } catch (err) {
